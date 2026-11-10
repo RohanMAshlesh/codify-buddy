@@ -11,8 +11,17 @@ export interface Credentials {
   source: CredentialSource;
 }
 
+export interface TeamCredentials {
+  url: string;
+  token: string;
+  email?: string;
+  expiresAt?: string | null;
+}
+
 interface Store {
   anthropicApiKey?: string;
+  /** Team server sign-in (`codify login --team`). */
+  team?: TeamCredentials;
   /** Connector secrets keyed by `<type>:<host>`, e.g. `confluence:acme.atlassian.net`. */
   secrets?: Record<string, string>;
 }
@@ -55,6 +64,31 @@ export function clearCredentials(): boolean {
   delete store.anthropicApiKey;
   writeStore(store);
   return true;
+}
+
+export function saveTeamCredentials(team: TeamCredentials): string {
+  return writeStore({ ...readStore(), team });
+}
+
+export function clearTeamCredentials(): boolean {
+  const store = readStore();
+  if (!store.team) return false;
+  delete store.team;
+  writeStore(store);
+  return true;
+}
+
+/**
+ * The team server this machine is signed in to. `CODIFY_TEAM_URL` +
+ * `CODIFY_TEAM_TOKEN` (for CI) take precedence over the stored sign-in.
+ */
+export function resolveTeam(env = process.env): TeamCredentials | null {
+  if (env.CODIFY_TEAM_URL && env.CODIFY_TEAM_TOKEN) return { url: env.CODIFY_TEAM_URL, token: env.CODIFY_TEAM_TOKEN };
+  if (env.CODIFY_TEAM === "off") return null;
+  const team = readStore().team;
+  if (!team) return null;
+  if (team.expiresAt && new Date(team.expiresAt) < new Date()) return null;
+  return team;
 }
 
 export function getStoredSecret(key: string): string | undefined {
