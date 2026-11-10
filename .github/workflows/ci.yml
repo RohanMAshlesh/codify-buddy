@@ -28,7 +28,9 @@ jobs:
         run: |
           node dist/cli.js --version
           node dist/cli.js search "context index" -n 3
-          node dist/cli.js doctor --offline --json
+          # No API key in CI, so doctor reports a failed check; assert it runs and emits valid JSON.
+          node dist/cli.js doctor --offline --json > doctor.json || true
+          node -e "const c = JSON.parse(require('fs').readFileSync('doctor.json', 'utf8')); if (!c.some((x) => x.name === 'Index' && x.status === 'ok')) process.exit(1)"
           node dist/cli.js demo "$RUNNER_TEMP/demo" --replay --fast
         shell: bash
         env:
