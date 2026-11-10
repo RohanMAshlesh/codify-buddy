@@ -15,7 +15,7 @@ const builds = [
     format: "cjs",
     target: "node18",
     external: ["vscode"],
-    sourcemap: true,
+    sourcemap: watch,
   },
   {
     entryPoints: ["src/webview/chat.ts"],
