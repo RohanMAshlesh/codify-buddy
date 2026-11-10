@@ -41,6 +41,7 @@
   ],
   "dependencies": {
     "@anthropic-ai/sdk": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "commander": "^15.1.0",
     "ignore": "^7.0.14",
     "picocolors": "^1.1.1",
