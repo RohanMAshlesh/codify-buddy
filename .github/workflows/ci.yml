@@ -29,6 +29,7 @@ jobs:
           node dist/cli.js --version
           node dist/cli.js search "context index" -n 3
           node dist/cli.js doctor --offline --json
+          node dist/cli.js demo "$RUNNER_TEMP/demo" --replay --fast
         shell: bash
         env:
           CODIFY_HOME: ${{ runner.temp }}/codify-home
