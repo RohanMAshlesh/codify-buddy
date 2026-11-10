@@ -18,6 +18,8 @@ let assistant: { el: HTMLElement; text: string; queued: boolean } | null = null;
 let thinkingEl: HTMLElement | null = null;
 const toolRows = new Map<string, HTMLElement>();
 
+const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
 function el(tag: string, cls: string, html = ""): HTMLElement {
   const e = document.createElement(tag);
   e.className = cls;
@@ -59,7 +61,8 @@ function setBusy(b: boolean) {
   busy = b;
   sendBtn.hidden = b;
   stopBtn.hidden = !b;
-  input.placeholder = b ? "Working… (you can type your next message)" : "Ask about your code and docs…  (Enter to send, Shift+Enter for a new line)";
+  input.placeholder = b ? "Working…" : "Ask about your code and docs…";
+  input.title = "Enter to send · Shift+Enter for a new line";
 }
 
 function renderStatus(info?: EngineInfo) {
@@ -133,7 +136,7 @@ window.addEventListener("message", (e: MessageEvent<ToWebview>) => {
       } else if (ev.type === "usage") {
         const u = ev.session;
         const cost = ev.costUsd === null ? "" : ` · ~$${ev.costUsd.toFixed(ev.costUsd < 0.1 ? 4 : 2)}`;
-        status.dataset.usage = `in ${u.inputTokens} · cached ${u.cacheReadTokens} · out ${u.outputTokens}${cost}`;
+        status.dataset.usage = `in ${tokens(u.inputTokens)} · cached ${tokens(u.cacheReadTokens)} · out ${tokens(u.outputTokens)}${cost}`;
         status.title = status.dataset.usage;
       } else if (ev.type === "notice") {
         endAssistant();
