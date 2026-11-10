@@ -35,3 +35,34 @@ jobs:
         shell: bash
         env:
           CODIFY_HOME: ${{ runner.temp }}/codify-home
+
+  vscode:
+    name: vscode extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            vscode/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: vscode
+      - run: npm run typecheck
+        working-directory: vscode
+      - run: npm run build
+        working-directory: vscode
+      - run: npm test
+        working-directory: vscode
+      - name: Run in real VS Code
+        run: xvfb-run -a npm run test:integration
+        working-directory: vscode
+      - run: npm run package
+        working-directory: vscode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codify-buddy-vsix
+          path: vscode/codify-buddy.vsix

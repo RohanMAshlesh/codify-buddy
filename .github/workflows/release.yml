@@ -27,6 +27,10 @@ jobs:
             bun build src/cli/index.ts --compile --minify --target=bun-$target --outfile release/codify-$target$ext
           done
           cd release && sha256sum codify-* > SHA256SUMS
+      - name: Build the VS Code extension
+        run: |
+          cd vscode && npm ci && npm test && npm run package
+          cp codify-buddy.vsix ../release/codify-buddy-${GITHUB_REF_NAME}.vsix
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*
@@ -48,3 +52,19 @@ jobs:
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NPM_TOKEN not set; skipping publish"; exit 0; fi
           npm publish --access public --provenance
+
+  vscode-marketplace:
+    runs-on: ubuntu-latest
+    needs: binaries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Publish to the VS Code Marketplace (skipped when VSCE_PAT is not configured)
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then echo "VSCE_PAT not set; skipping Marketplace publish"; exit 0; fi
+          cd vscode && npm ci && npx vsce publish --no-dependencies
