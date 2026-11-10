@@ -13,7 +13,7 @@ import {
   setConfigValue,
   type PermissionMode,
 } from "../config/config.js";
-import { resolveCredentials } from "../config/credentials.js";
+import { resolveCredentials, resolveTeam } from "../config/credentials.js";
 import { findProjectRoot } from "../config/paths.js";
 import { ContextIndex, indexOptionsFor } from "../context/index.js";
 import { Engine } from "../engine/engine.js";
@@ -22,6 +22,20 @@ import { MissingCredentialsError } from "../model/client.js";
 import { CONNECTOR_TYPES, runConnect, runConnectorsList, runDisconnect, runSync, type ConnectorType } from "./commands/connect.js";
 import { runDemo } from "./commands/demo.js";
 import { runDoctor } from "./commands/doctor.js";
+import {
+  defaultTeamConfig,
+  runTeamAudit,
+  runTeamInit,
+  runTeamLogin,
+  runTeamLogout,
+  runTeamServe,
+  runTeamStatus,
+  runTeamSync,
+  runTeamTokenCreate,
+  runTeamTokenList,
+  runTeamTokenRevoke,
+  runTeamUsage,
+} from "./commands/team.js";
 import { runMcpAdd, runMcpList, runMcpRemove } from "./commands/mcp.js";
 import { serveMcp } from "../mcp/server.js";
 import { runLogin, runLogout } from "./commands/login.js";
@@ -77,7 +91,7 @@ interface MainOptions {
 }
 
 async function ensureCredentials(interactive: boolean): Promise<boolean> {
-  if (resolveCredentials().source !== "none") return true;
+  if (resolveCredentials().source !== "none" || resolveTeam()) return true;
   if (!interactive) {
     process.stderr.write(pc.red("No API key found. Set ANTHROPIC_API_KEY or run `codify login`.\n"));
     return false;
@@ -121,6 +135,7 @@ async function main(promptParts: string[], opts: MainOptions): Promise<number> {
   for (const m of engine.mcpStatus) {
     process.stdout.write(m.ok ? pc.dim(`  mcp ${m.name} · ${m.tools.length} tools\n`) : pc.yellow(`  ! mcp ${m.name} unavailable: ${m.error}\n`));
   }
+  if (engine.team) process.stdout.write(pc.dim(`  team ${engine.team.client.url} · ${engine.team.identity.email} · max mode ${engine.team.policy.maxPermissionMode}\n`));
   if (resume) process.stdout.write(pc.dim(`  resumed session ${resume}: ${engine.session.title}\n`));
   process.stdout.write("\n");
   await runRepl(engine, rl, { showThinking: opts.thinking });
@@ -162,13 +177,92 @@ function build(): Command {
 
   program
     .command("login")
-    .description("store your Anthropic API key in ~/.codify")
+    .description("store your Anthropic API key, or sign in to a team server with --team")
     .option("--no-verify", "skip checking the key against the API")
-    .action(async (o: { verify: boolean }) => {
-      process.exitCode = (await runLogin({ verify: o.verify })) ? 0 : 1;
+    .option("--team <url>", "sign in to your organisation's Codify Buddy team server (SSO)")
+    .option("--token <token>", "with --team: use an admin-issued token instead of SSO (CI)")
+    .option("--no-browser", "with --team: print the sign-in URL instead of opening a browser")
+    .action(async (o: { verify: boolean; team?: string; token?: string; browser: boolean }) => {
+      if (o.team) process.exitCode = await runTeamLogin(o.team, { token: o.token, browser: o.browser });
+      else process.exitCode = (await runLogin({ verify: o.verify })) ? 0 : 1;
     });
 
-  program.command("logout").description("remove the stored API key").action(() => runLogout());
+  program
+    .command("logout")
+    .description("remove the stored API key, or sign out of the team server with --team")
+    .option("--team", "sign out of the team server")
+    .action((o: { team?: boolean }) => (o.team ? runTeamLogout() : runLogout()));
+
+  const team = program.command("team").description("team mode: status for users; server and admin commands for operators");
+  team
+    .command("status")
+    .description("show your team sign-in, policy, budget and shared sources")
+    .option("--json", "output JSON")
+    .action(async (o: { json?: boolean }) => {
+      process.exitCode = await runTeamStatus(o.json);
+    });
+  team
+    .command("init [file]")
+    .description("write a starter team server config (default team.json)")
+    .option("--org <name>", "organisation name", "Acme")
+    .action((file: string | undefined, o: { org: string }) => {
+      process.exitCode = runTeamInit(file ?? "team.json", o.org);
+    });
+  team
+    .command("serve")
+    .description("run the team server (SSO, policy, shared sources, audit, gateway)")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .option("-p, --port <port>", "port (default 8787 or $PORT)")
+    .option("--host <host>", "interface to bind (default 127.0.0.1 or $HOST)")
+    .action(async (o: { config: string; port?: string; host?: string }) => {
+      await runTeamServe(o.config, o);
+    });
+  const token = team.command("token").description("admin-issued tokens for CI and orgs without SSO");
+  token
+    .command("create")
+    .requiredOption("--email <email>", "who the token acts as")
+    .option("--groups <a,b>", "groups for source access")
+    .option("--admin", "grant admin rights")
+    .option("--days <n>", "lifetime in days (0 = never expires)", "90")
+    .option("--label <text>", "note, e.g. ci")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action((o: { config: string; email: string; groups?: string; admin?: boolean; days?: string; label?: string }) => {
+      process.exitCode = runTeamTokenCreate(o.config, o);
+    });
+  token
+    .command("list")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action((o: { config: string }) => runTeamTokenList(o.config));
+  token
+    .command("revoke <id>")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action((id: string, o: { config: string }) => {
+      process.exitCode = runTeamTokenRevoke(o.config, id);
+    });
+  team
+    .command("sync [source]")
+    .description("sync team sources now")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action(async (source: string | undefined, o: { config: string }) => {
+      process.exitCode = await runTeamSync(o.config, source);
+    });
+  team
+    .command("audit")
+    .description("read the audit log")
+    .option("--email <email>")
+    .option("--since <iso-date>")
+    .option("--type <type>", "e.g. tool_call, model_request, sign_in")
+    .option("-n, --limit <n>", "max events", "100")
+    .option("--json")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action((o: { config: string; email?: string; since?: string; type?: string; limit?: string; json?: boolean }) => runTeamAudit(o.config, o));
+  team
+    .command("usage")
+    .description("model spend per person this month")
+    .option("--month <yyyy-mm>")
+    .option("--json")
+    .option("-c, --config <file>", "team config", defaultTeamConfig())
+    .action((o: { config: string; month?: string; json?: boolean }) => runTeamUsage(o.config, o));
 
   program
     .command("doctor")
