@@ -1,0 +1,215 @@
+{
+  "name": "codify-buddy-vscode",
+  "displayName": "Codify Buddy",
+  "description": "AI coding copilot that knows your code, your docs and your tools: chat, cited answers, reviewed edits.",
+  "version": "0.1.0",
+  "publisher": "rohanmashlesh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RohanMAshlesh/codify-buddy.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "copilot",
+    "claude",
+    "confluence",
+    "jira",
+    "mcp",
+    "rag"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codify",
+          "title": "Codify Buddy",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "codify": [
+        {
+          "type": "webview",
+          "id": "codify.chat",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codify.newChat",
+        "title": "New Chat",
+        "category": "Codify",
+        "icon": "$(add)"
+      },
+      {
+        "command": "codify.askSelection",
+        "title": "Ask About Selection",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.explainSelection",
+        "title": "Explain Selection",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.searchContext",
+        "title": "Search Code and Docs",
+        "category": "Codify",
+        "icon": "$(search)"
+      },
+      {
+        "command": "codify.setMode",
+        "title": "Set Permission Mode",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.resumeSession",
+        "title": "Resume Session",
+        "category": "Codify",
+        "icon": "$(history)"
+      },
+      {
+        "command": "codify.stop",
+        "title": "Stop",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.setApiKey",
+        "title": "Set Anthropic API Key",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.restartEngine",
+        "title": "Restart Engine",
+        "category": "Codify"
+      },
+      {
+        "command": "codify.showLog",
+        "title": "Show Engine Log",
+        "category": "Codify"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codify.askSelection",
+          "when": "editorHasSelection",
+          "group": "codify@1"
+        },
+        {
+          "command": "codify.explainSelection",
+          "when": "editorHasSelection",
+          "group": "codify@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "codify.newChat",
+          "when": "view == codify.chat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codify.searchContext",
+          "when": "view == codify.chat",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codify.resumeSession",
+          "when": "view == codify.chat",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codify.askSelection",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "codify.searchContext",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
+      }
+    ],
+    "configuration": {
+      "title": "Codify Buddy",
+      "properties": {
+        "codify.permissionMode": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "auto-edit",
+            "yolo",
+            "read-only"
+          ],
+          "default": "ask",
+          "markdownDescription": "When the agent may change files or run commands. `ask` reviews every edit and command."
+        },
+        "codify.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model id (empty = the project or user default, `claude-opus-5-5`)."
+        },
+        "codify.effort": {
+          "type": "string",
+          "enum": [
+            "",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "",
+          "markdownDescription": "Thinking effort (empty = default)."
+        },
+        "codify.openDiffOnApproval": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Open VS Code's diff view when an edit needs approval."
+        },
+        "codify.serverCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Use an installed `codify` CLI instead of the bundled engine (e.g. `codify`)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "node test/integration/run.mjs",
+    "package": "vsce package --no-dependencies -o codify-buddy.vsix",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/vscode": "~1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
