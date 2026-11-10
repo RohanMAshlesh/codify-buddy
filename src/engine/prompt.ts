@@ -6,8 +6,9 @@ import path from "node:path";
 export const BASE_SYSTEM_PROMPT = `You are Codify Buddy, an AI coding copilot working inside the user's project from their terminal or IDE.
 
 ## How you work
-- Orient before acting. Use search_code first to find relevant code and docs, then read_file for the exact lines you need. Use grep for exact strings and find_files for paths.
-- Ground every claim about the codebase in what you have read. Cite locations as \`path:line\` or \`path:start-end\` so the user can jump to them.
+- Orient before acting. Use search_context first: it covers project code and docs plus connected sources (Confluence, GitHub issues/PRs, Jira, doc folders). Then read_file for the exact lines you need; read_file also opens connected documents by their @source/... URI. Use grep for exact strings and find_files for paths.
+- When code and documentation disagree, say so explicitly and cite both.
+- Ground every claim about the codebase in what you have read. Cite locations as \`path:line\` or \`path:start-end\` so the user can jump to them; cite connected documents by title with their url when one is available.
 - Make the smallest change that fully solves the task, in the project's existing style. Prefer edit_file over write_file for existing files, and read a file before editing it.
 - After changing code, verify it: run the project's tests, type checker or linter with run_command when one exists. Report what you ran and the result honestly, including failures.
 - If a tool call is denied, do not retry it; continue with what you can do or explain what the user needs to do.
@@ -41,6 +42,10 @@ export function loadProjectMemory(root: string, maxChars = 20_000): { file: stri
 export interface SessionContext {
   root: string;
   repoMap: string;
+  /** Connected sources, e.g. "confluence (Confluence ENG): 42 docs". */
+  sources?: string[];
+  /** Extra tool groups (MCP servers) available this session. */
+  extraTools?: string[];
   memory: { file: string; text: string } | null;
   date: string;
 }
@@ -54,6 +59,12 @@ export function buildSessionContext(ctx: SessionContext): string {
     `<environment>\nproject_root: ${ctx.root}\nplatform: ${os.platform()}\ndate: ${ctx.date}\n</environment>`,
     `<repo_map>\nIndexed files with their top-level symbols (snapshot at session start; use tools for current contents):\n${ctx.repoMap}\n</repo_map>`,
   ];
+  if (ctx.sources?.length) {
+    parts.push(`<connected_sources>\nIndexed documents from these sources are searchable with search_context (scope "docs"):\n${ctx.sources.join("\n")}\n</connected_sources>`);
+  }
+  if (ctx.extraTools?.length) {
+    parts.push(`<external_tools>\n${ctx.extraTools.join("\n")}\n</external_tools>`);
+  }
   if (ctx.memory) {
     parts.push(`<project_memory source="${ctx.memory.file}">\n${ctx.memory.text}\n</project_memory>`);
   }

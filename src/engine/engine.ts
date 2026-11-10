@@ -71,6 +71,7 @@ export class Engine {
     const systemContext = buildSessionContext({
       root: this.root,
       repoMap: buildRepoMap(this.index, this.config.context.repoMapTokens),
+      sources: this.index.sources().map((src) => `${src.id} (${src.label}): ${src.docs} documents`),
       memory: loadProjectMemory(this.root),
       date: new Date().toISOString().slice(0, 10),
     });

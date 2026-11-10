@@ -217,3 +217,41 @@ describe("ContextIndex", () => {
     expect(buildRepoMap(idx, 5)).toMatch(/more files/);
   });
 });
+
+describe("external sources", () => {
+  it("indexes connector documents alongside code with scoped search", () => {
+    const root = makeTempDir({ "src/refund.ts": "export function refundAmount(cents: number) {\n  return Math.floor(cents * 0.5);\n}\n" });
+    const idx = new ContextIndex(root, { maxFileBytes: 1_000_000 });
+    idx.update();
+    const sum = idx.setExternalSource({
+      id: "confluence",
+      kind: "confluence",
+      label: "Confluence ENG",
+      docs: [
+        { id: "1", title: "Refund Policy", path: "ENG/Refund Policy", url: "https://acme.atlassian.net/wiki/x/1", text: "# Refund Policy\n\n## Rounding\n\nRefund amounts round half up to the nearest cent.\n" },
+        { id: "2", title: "Refund Policy", path: "ENG/Refund Policy", text: "duplicate title" },
+      ],
+    });
+    expect(sum).toMatchObject({ id: "confluence", docs: 2 });
+
+    const all = idx.search("refund rounding cents");
+    const doc = all.hits.find((h) => h.source === "confluence")!;
+    expect(doc.citation).toMatch(/^@confluence\/eng\/refund-policy:\d+-\d+$/);
+    expect(doc.url).toBe("https://acme.atlassian.net/wiki/x/1");
+    expect(doc.text).toContain("round half up");
+    expect(all.hits.some((h) => h.path === "src/refund.ts")).toBe(true);
+
+    expect(idx.search("refund", { scope: "docs" }).hits.every((h) => h.source)).toBe(true);
+    expect(idx.search("refund", { scope: "code" }).hits.every((h) => !h.source)).toBe(true);
+    expect(idx.getExternalDoc("@confluence/eng/refund-policy-2")?.text).toBe("duplicate title");
+
+    // Survives reload and is untouched by code re-indexing.
+    const re = new ContextIndex(root, { maxFileBytes: 1_000_000 });
+    re.load();
+    re.update();
+    expect(re.sources()).toHaveLength(1);
+    expect(re.search("half up", { scope: "docs" }).hits).toHaveLength(1);
+    expect(re.removeExternalSource("confluence")).toBe(true);
+    expect(re.search("half up").hits).toHaveLength(0);
+  });
+});

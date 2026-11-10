@@ -37,6 +37,45 @@ export interface FileEntry {
   chunks: StoredChunk[];
 }
 
+/** A document from a connector (Confluence page, issue, doc folder file). */
+export interface ExternalDoc {
+  id: string;
+  title: string;
+  /** Virtual path used in citations, e.g. `@confluence/ENG/refund-policy`. */
+  uri: string;
+  url?: string;
+  updatedAt?: string;
+  text: string;
+  chunks: StoredChunk[];
+}
+
+export interface ExternalSource {
+  id: string;
+  kind: string;
+  label: string;
+  syncedAt: string;
+  docs: Record<string, ExternalDoc>;
+}
+
+export interface ExternalDocInput {
+  id: string;
+  title: string;
+  /** Path segment(s) under the source, e.g. `ENG/Refund Policy`. Defaults to the title. */
+  path?: string;
+  url?: string;
+  updatedAt?: string;
+  /** Markdown or plain text. */
+  text: string;
+}
+
+export interface SourceSummary {
+  id: string;
+  kind: string;
+  label: string;
+  syncedAt: string;
+  docs: number;
+}
+
 interface Persisted {
   version: number;
   builtAt: string;
@@ -57,8 +96,12 @@ export interface UpdateStats {
   ms: number;
 }
 
+export type SearchScope = "all" | "code" | "docs";
+
 export interface SearchOptions {
   limit?: number;
+  /** `code` = project files, `docs` = connector documents, `all` (default) = both. */
+  scope?: SearchScope;
   /** Only include files whose path contains this substring or matches this glob-ish prefix. */
   pathFilter?: string;
   /** Token budget for returned snippet text. */
@@ -77,6 +120,10 @@ export interface SearchHit {
   /** `path:start-end` */
   citation: string;
   text?: string;
+  /** Connector id for external documents (absent for project files). */
+  source?: string;
+  url?: string;
+  title?: string;
 }
 
 export interface SearchResult {
@@ -86,7 +133,15 @@ export interface SearchResult {
   tokens: number;
 }
 
-type ChunkRef = { path: string; chunk: StoredChunk };
+type ChunkRef = { path: string; chunk: StoredChunk; doc?: ExternalDoc; source?: string };
+
+/** Turn a title or path into a citation-friendly slug segment. */
+export function slugify(s: string): string {
+  return s
+    .split("/")
+    .map((seg) => seg.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "untitled")
+    .join("/");
+}
 
 function hashContent(content: string): string {
   return crypto.createHash("sha1").update(content).digest("hex");
@@ -110,6 +165,8 @@ function buildChunkTf(text: string, symbol: string | undefined, rel: string): Re
 export class ContextIndex {
   readonly root: string;
   private files: Record<string, FileEntry> = Object.create(null);
+  private external: Record<string, ExternalSource> = Object.create(null);
+  private docsByUri = new Map<string, { doc: ExternalDoc; source: ExternalSource }>();
   private refs: ChunkRef[] = [];
   private postings = new Map<string, Array<[number, number]>>();
   private avgLen = 1;
@@ -122,6 +179,10 @@ export class ContextIndex {
 
   get indexFile(): string {
     return path.join(projectDir(this.root), "index", "index.json");
+  }
+
+  get externalDir(): string {
+    return path.join(projectDir(this.root), "connectors");
   }
 
   get fileCount(): number {
@@ -138,6 +199,7 @@ export class ContextIndex {
 
   /** Load a persisted index if present and compatible. */
   load(): boolean {
+    this.loadExternal();
     try {
       const data = JSON.parse(fs.readFileSync(this.indexFile, "utf8")) as Persisted;
       if (data.version !== INDEX_VERSION) return false;
@@ -149,8 +211,85 @@ export class ContextIndex {
       this.rebuildDerived();
       return true;
     } catch {
+      this.rebuildDerived();
       return false;
     }
+  }
+
+  /** Load connector documents synced into `.codify/connectors/*.json`. */
+  private loadExternal(): void {
+    this.external = Object.create(null);
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(this.externalDir).filter((n) => n.endsWith(".json"));
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      try {
+        const src = JSON.parse(fs.readFileSync(path.join(this.externalDir, n), "utf8")) as ExternalSource & { version?: number };
+        if (src.version !== INDEX_VERSION) continue;
+        src.docs = Object.assign(Object.create(null), src.docs);
+        for (const d of Object.values(src.docs)) for (const c of d.chunks) c.tf = Object.assign(Object.create(null), c.tf);
+        this.external[src.id] = src;
+      } catch {
+        // ignore unreadable source files; a re-sync rewrites them
+      }
+    }
+  }
+
+  /** Replace all documents of one connector source and persist them. */
+  setExternalSource(input: { id: string; kind: string; label: string; docs: ExternalDocInput[] }): SourceSummary {
+    const docs: Record<string, ExternalDoc> = Object.create(null);
+    const usedUris = new Set<string>();
+    for (const d of input.docs) {
+      let uri = `@${input.id}/${slugify(d.path ?? d.title)}`;
+      for (let n = 2; usedUris.has(uri); n++) uri = `@${input.id}/${slugify(d.path ?? d.title)}-${n}`;
+      usedUris.add(uri);
+      const chunks = chunkFile(d.text, "markdown").map((c): StoredChunk => {
+        const symbol = c.symbol ? `${d.title} > ${c.symbol}` : d.title;
+        const tf = buildChunkTf(c.text, symbol, `${input.id}/${d.path ?? d.title}`);
+        const len = Object.values(tf).reduce((a, b) => a + b, 0);
+        return { startLine: c.startLine, endLine: c.endLine, kind: "section", symbol, tf, len, tokens: estimateTokens(c.text) };
+      });
+      docs[d.id] = { id: d.id, title: d.title, uri, url: d.url, updatedAt: d.updatedAt, text: d.text, chunks };
+    }
+    const src: ExternalSource = { id: input.id, kind: input.kind, label: input.label, syncedAt: new Date().toISOString(), docs };
+    ensureDir(this.externalDir);
+    const file = path.join(this.externalDir, `${input.id}.json`);
+    fs.writeFileSync(file + ".tmp", JSON.stringify({ version: INDEX_VERSION, ...src }));
+    fs.renameSync(file + ".tmp", file);
+    this.external[src.id] = src;
+    this.rebuildDerived();
+    return this.summarize(src);
+  }
+
+  removeExternalSource(id: string): boolean {
+    if (!this.external[id]) return false;
+    delete this.external[id];
+    try {
+      fs.unlinkSync(path.join(this.externalDir, `${id}.json`));
+    } catch {
+      // already gone
+    }
+    this.rebuildDerived();
+    return true;
+  }
+
+  private summarize(src: ExternalSource): SourceSummary {
+    return { id: src.id, kind: src.kind, label: src.label, syncedAt: src.syncedAt, docs: Object.keys(src.docs).length };
+  }
+
+  sources(): SourceSummary[] {
+    return Object.values(this.external)
+      .map((s) => this.summarize(s))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** Look up a connector document by its `@source/...` URI. */
+  getExternalDoc(uri: string): (ExternalDoc & { source: string; sourceLabel: string }) | null {
+    const hit = this.docsByUri.get(uri);
+    return hit ? { ...hit.doc, source: hit.source.id, sourceLabel: hit.source.label } : null;
   }
 
   save(): void {
@@ -233,6 +372,23 @@ export class ContextIndex {
         }
       }
     }
+    this.docsByUri = new Map();
+    for (const src of Object.values(this.external)) {
+      for (const doc of Object.values(src.docs)) {
+        this.docsByUri.set(doc.uri, { doc, source: src });
+        for (const chunk of doc.chunks) {
+          const idx = this.refs.length;
+          this.refs.push({ path: doc.uri, chunk, doc, source: src.id });
+          total += chunk.len;
+          for (const [term, tf] of Object.entries(chunk.tf)) {
+            if (typeof tf !== "number" || !Number.isFinite(tf)) continue;
+            let list = this.postings.get(term);
+            if (!list) this.postings.set(term, (list = []));
+            list.push([idx, tf]);
+          }
+        }
+      }
+    }
     this.avgLen = this.refs.length ? total / this.refs.length : 1;
 
     const all = new Set(Object.keys(this.files));
@@ -280,8 +436,14 @@ export class ContextIndex {
     // Boost exact identifier matches in symbol names.
     const rawIdents = (query.match(/[A-Za-z_$][\w$]{2,}/g) ?? []).map((w) => w.toLowerCase());
     const filter = options.pathFilter;
+    const scope = options.scope ?? "all";
     const ranked = [...scores.entries()]
-      .filter(([idx]) => !filter || this.refs[idx]!.path.includes(filter))
+      .filter(([idx]) => {
+        const ref = this.refs[idx]!;
+        if (scope === "code" && ref.doc) return false;
+        if (scope === "docs" && !ref.doc) return false;
+        return !filter || ref.path.includes(filter);
+      })
       .map(([idx, s]) => {
         const { chunk, path: p } = this.refs[idx]!;
         const sym = chunk.symbol?.toLowerCase() ?? "";
@@ -300,7 +462,7 @@ export class ContextIndex {
     let tokens = 0;
     for (const { idx, score } of ranked) {
       if (hits.length >= limit) break;
-      const { path: rel, chunk } = this.refs[idx]!;
+      const { path: rel, chunk, doc, source } = this.refs[idx]!;
       const n = perFile.get(rel) ?? 0;
       if (n >= MAX_CHUNKS_PER_FILE) continue;
       if (tokens + chunk.tokens > budget && hits.length > 0) continue;
@@ -314,7 +476,16 @@ export class ContextIndex {
         score: Math.round(score * 1000) / 1000,
         citation: `${rel}:${chunk.startLine}-${chunk.endLine}`,
       };
-      if (withText) hit.text = this.readLines(rel, chunk.startLine, chunk.endLine);
+      if (doc) {
+        hit.source = source;
+        hit.title = doc.title;
+        if (doc.url) hit.url = doc.url;
+      }
+      if (withText) {
+        hit.text = doc
+          ? doc.text.split(/\r?\n/).slice(chunk.startLine - 1, chunk.endLine).join("\n")
+          : this.readLines(rel, chunk.startLine, chunk.endLine);
+      }
       tokens += chunk.tokens;
       hits.push(hit);
     }

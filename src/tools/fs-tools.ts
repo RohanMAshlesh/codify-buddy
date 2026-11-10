@@ -5,7 +5,7 @@ import { walkProject } from "../context/walker.js";
 import { lineDiff } from "../util/diff.js";
 import { resolveInRoot, toRel } from "../util/paths.js";
 import { splitLines, truncateMiddle } from "../util/tokens.js";
-import { ToolError, type Tool } from "./types.js";
+import { ToolError, type Tool, type ToolContext, type ToolOutput } from "./types.js";
 
 const MAX_READ_LINES = 2000;
 const MAX_OUTPUT_TOKENS = 25_000;
@@ -21,18 +21,30 @@ function readText(abs: string, rel: string): string {
   return fs.readFileSync(abs, "utf8");
 }
 
+function readExternal(input: { path: string; start_line?: number; end_line?: number }, ctx: ToolContext): ToolOutput {
+  const doc = ctx.index.getExternalDoc(input.path);
+  if (!doc) throw new ToolError(`No connected document at ${input.path}. Use search_context with scope "docs" to find documents.`);
+  const lines = splitLines(doc.text);
+  const start = Math.max(1, input.start_line ?? 1);
+  const end = Math.min(lines.length, input.end_line ?? start + MAX_READ_LINES - 1);
+  const header = `# ${doc.title}\nsource: ${doc.sourceLabel}${doc.url ? `\nurl: ${doc.url}` : ""}${doc.updatedAt ? `\nupdated: ${doc.updatedAt}` : ""}\n\n`;
+  const body = truncateMiddle(numbered(lines.slice(start - 1, end), start), MAX_OUTPUT_TOKENS);
+  return { content: header + body, summary: `Read ${doc.title} (${doc.sourceLabel})` };
+}
+
 export const readFileTool: Tool<{ path: string; start_line?: number; end_line?: number }> = {
   name: "read_file",
   description:
-    "Read a text file from the project. Returns numbered lines. Use start_line/end_line for large files (max 2000 lines per call).",
+    "Read a text file from the project, or a connected document by its @source/... URI (from search_context). Returns numbered lines. Use start_line/end_line for large files (max 2000 lines per call).",
   access: "read",
   schema: z.object({
-    path: z.string().describe("Path relative to the project root"),
+    path: z.string().describe("Path relative to the project root, or an @source/... document URI"),
     start_line: z.number().int().positive().optional().describe("1-based first line"),
     end_line: z.number().int().positive().optional().describe("1-based last line, inclusive"),
   }),
   describe: (i) => `read ${i.path}`,
   async run(input, ctx) {
+    if (input.path.startsWith("@")) return readExternal(input, ctx);
     const abs = resolveInRoot(ctx.root, input.path);
     const lines = splitLines(readText(abs, input.path));
     const start = Math.max(1, input.start_line ?? 1);
@@ -91,7 +103,7 @@ export const findFilesTool: Tool<{ query: string }> = {
 export const grepTool: Tool<{ pattern: string; path?: string; ignore_case?: boolean; max_results?: number }> = {
   name: "grep",
   description:
-    "Search file contents with a JavaScript regular expression. Returns path:line: text matches. Prefer search_code for conceptual queries; use grep for exact strings.",
+    "Search file contents with a JavaScript regular expression. Returns path:line: text matches. Prefer search_context for conceptual queries; use grep for exact strings.",
   access: "read",
   schema: z.object({
     pattern: z.string().min(1),

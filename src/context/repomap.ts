@@ -35,6 +35,6 @@ export function buildRepoMap(index: ContextIndex, budgetTokens: number): string 
     const l = chosen.get(rel);
     if (l) lines.push(l);
   }
-  if (omitted) lines.push(`… ${omitted} more files (use search_code / find_files)`);
+  if (omitted) lines.push(`… ${omitted} more files (use search_context / find_files)`);
   return lines.join("\n");
 }

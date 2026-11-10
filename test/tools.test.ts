@@ -25,7 +25,7 @@ describe("registry", () => {
   it("emits stable JSON-schema tool definitions", () => {
     const defs = new ToolRegistry().definitions();
     expect(defs.map((d) => d.name)).toEqual([
-      "search_code", "find_files", "read_file", "list_dir", "grep", "git", "edit_file", "write_file", "run_command",
+      "search_context", "find_files", "read_file", "list_dir", "grep", "git", "edit_file", "write_file", "run_command",
     ]);
     const edit = defs.find((d) => d.name === "edit_file")!;
     expect(edit.input_schema.type).toBe("object");
@@ -67,9 +67,9 @@ describe("fs tools", () => {
     expect((await run("list_dir", {})).content).toBe("src/\nsrc/a.ts\nsrc/b.ts");
   });
 
-  it("search_code returns cited snippets", async () => {
+  it("search_context returns cited snippets", async () => {
     const { run } = setup({ "src/pay.ts": "export function issueRefund(id: string) {\n  return id;\n}\n" });
-    const out = await run("search_code", { query: "issue refund" });
+    const out = await run("search_context", { query: "issue refund" });
     expect(out.content).toContain('citation="src/pay.ts:1-3"');
   });
 });
@@ -122,5 +122,19 @@ describe("lineDiff", () => {
   it("produces hunks", () => {
     expect(lineDiff("a\nb\nc", "a\nB\nc", 1)).toBe("@@ -1 +1 @@\n a\n-b\n+B\n c");
     expect(lineDiff("same", "same")).toBe("");
+  });
+});
+
+describe("connected documents", () => {
+  it("search_context and read_file work with @source URIs", async () => {
+    const { ctx, run } = setup({ "a.ts": "export const x = 1;\n" });
+    ctx.index.setExternalSource({ id: "wiki", kind: "docs", label: "Team wiki", docs: [{ id: "p", title: "Deploy Guide", url: "https://wiki/p", text: "# Deploy Guide\n\nRun the blue-green deploy script.\n" }] });
+    const found = await run("search_context", { query: "blue green deploy", scope: "docs" });
+    expect(found.content).toContain('source="wiki"');
+    expect(found.content).toContain('url="https://wiki/p"');
+    const read = await run("read_file", { path: "@wiki/deploy-guide" });
+    expect(read.content).toContain("url: https://wiki/p");
+    expect(read.content).toContain("3\tRun the blue-green deploy script.");
+    await expect(run("read_file", { path: "@wiki/missing" })).rejects.toThrow(/No connected document/);
   });
 });

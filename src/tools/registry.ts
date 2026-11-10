@@ -1,12 +1,12 @@
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
-import { searchCodeTool } from "./context-tools.js";
+import { searchContextTool } from "./context-tools.js";
 import { editFileTool, findFilesTool, grepTool, listDirTool, readFileTool, writeFileTool } from "./fs-tools.js";
 import { gitTool, runCommandTool } from "./shell-tools.js";
 import type { Tool } from "./types.js";
 
 export const BUILTIN_TOOLS: Tool<any>[] = [
-  searchCodeTool,
+  searchContextTool,
   findFilesTool,
   readFileTool,
   listDirTool,
