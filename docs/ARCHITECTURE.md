@@ -122,6 +122,27 @@ serve`'s JSON-RPC.
 | RPC additions | `chat/setMode \| setEffort \| setModel`, `context/read`, `sources/list`, `sessions/resume` (with transcript), error `-32001` when no API key; approval requests carry full before/after contents |
 | Tests | Engine client against the real bundled engine; controller end to end against a VS Code API mock, the real engine and a local Anthropic-protocol server; webview rendered in Chromium; CI runs the extension in real VS Code |
 
+## 4e. Team mode (P4)
+
+```
+ codify CLI / VS Code ──(team token)──▶ Team server ──(org key)──▶ Anthropic API
+                                          │  /v1/auth/exchange  SSO ID token → session token
+                                          │  /v1/policy /v1/budget /v1/me
+                                          │  /v1/search /v1/docs  shared sources, filtered by group
+                                          │  /v1/audit            events stored under the caller
+                                          │  /gateway/v1/*        model proxy: model + budget checks, metering
+                                          │  /v1/admin/*          audit, usage, tokens, sync (admins)
+                                          └─ data dir: tokens (hashed), usage.json, audit/YYYY-MM.jsonl, index/
+```
+
+| Piece | Behaviour |
+|---|---|
+| Sign-in | `codify login --team`: OIDC authorization code + PKCE with a loopback redirect (RFC 8252); the server verifies the ID token against the provider's JWKS (issuer, audience, expiry, verified email) and issues a session token. Admin-issued tokens cover CI. Tokens are stored as SHA-256 hashes. |
+| Gateway | Forwards Messages API calls with the org key; rejects disallowed models and exhausted budgets with Anthropic-format errors; parses the streamed `usage` and records cost per person per month. |
+| Shared sources | The server runs the same connectors and index; each source has an `allow` list (`*`, `group:`, `user:`, `domain:`), applied inside search before ranking and on document reads. |
+| Client | `Engine.open()` resolves the sign-in (or `CODIFY_TEAM_URL` + `CODIFY_TEAM_TOKEN`), fetches identity and policy, caps the permission gate, swaps disallowed models, skips disallowed MCP servers, routes model traffic through the gateway, merges team hits into `search_context`, checks the budget before each turn and sends audit events after it. |
+| Store | File-backed (atomic writes, one process per data dir) behind a small interface, so a database can replace it. |
+
 ## 5. Agent loop
 
 * Manual streaming loop on the Messages API (`claude-opus-5-5`, adaptive
@@ -161,5 +182,5 @@ Headless runs default to `read-only` unless a mode is passed explicitly.
 | **P1** | Context engine: index, retrieval, citations, repo map |
 | **P2** | Connectors: GitHub, Confluence, Jira, docs; MCP client + MCP server; `codify demo` |
 | **P3** | VS Code extension over `codify serve` (shipped) |
-| P4 | Team server: SSO, shared indexes, audit, policy, budgets |
+| **P4** | Team server: SSO, gateway, shared indexes, audit, policy, budgets (shipped) |
 | P5 | Doc-drift detection, PR review action, ticket → PR |

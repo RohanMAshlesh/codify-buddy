@@ -153,6 +153,28 @@ code --install-extension codify-buddy.vsix
 To build it yourself, run `cd vscode && npm install && npm run build && npm
 run package`. More detail is in [vscode/README.md](vscode/README.md).
 
+## Team mode
+
+For companies: one server, and everyone signs in with SSO.
+
+```bash
+codify login --team https://codify.acme.com     # SSO in the browser; no API key needed
+codify team status                              # your policy, budget and shared sources
+```
+
+- **Model gateway.** The org's Anthropic key stays on the server. Allowed
+  models and monthly budgets are enforced there.
+- **Shared, permission-aware sources.** Confluence, Jira and GitHub are
+  synced once on the server, and each search is filtered by the person's
+  groups.
+- **Central policy.** A maximum permission mode, allowed models and allowed
+  MCP servers apply automatically in the CLI and VS Code.
+- **Audit log and usage.** Tool calls, approvals and denials, model requests,
+  tokens and cost per person.
+
+Admins run `codify team init` and `codify team serve`, or use the
+`Dockerfile`. The full guide is in [docs/TEAM.md](docs/TEAM.md).
+
 ## Commands
 
 | Command | Description |
@@ -171,6 +193,9 @@ run package`. More detail is in [vscode/README.md](vscode/README.md).
 | `codify config list\|get\|set` | View or change settings |
 | `codify doctor` | Diagnose runtime, credentials, API access, index and connectors |
 | `codify login` / `logout` | Store or remove your API key |
+| `codify login --team <url>` / `logout --team` | Sign in to or out of a team server (SSO, or `--token` for CI) |
+| `codify team status` | Your team policy, budget and visible sources |
+| `codify team init \| serve \| sync \| token \| audit \| usage` | Run and operate a team server (admins) |
 | `codify serve --stdio` | Run the engine as a JSON-RPC server for IDE extensions |
 
 Inside the chat: `/help`, `/new`, `/sessions`, `/resume <id>`, `/search <q>`,
@@ -264,7 +289,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - [x] **P1** Local context engine: index, retrieval, citations, repo map
 - [x] **P2** Connectors (GitHub, Confluence, Jira, docs folders), MCP client, MCP context server, `codify demo`
 - [x] **P3** VS Code extension: sidebar chat, native diff approvals, clickable citations, selection actions, bundled engine
-- [ ] **P4** Team mode: shared indexes, SSO, audit log, policies, budgets
+- [x] **P4** Team mode: SSO, model gateway, shared ACL-filtered sources, central policy, audit log, budgets
 - [ ] **P5** Doc-drift detection, PR review action, ticket → PR
 
 ## Development
