@@ -1,0 +1,8 @@
+node_modules/
+dist/
+bin-out/
+.codify/
+coverage/
+*.log
+.DS_Store
+.env
