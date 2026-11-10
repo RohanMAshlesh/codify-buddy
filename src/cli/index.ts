@@ -21,6 +21,8 @@ import { listSessions } from "../engine/session.js";
 import { MissingCredentialsError } from "../model/client.js";
 import { CONNECTOR_TYPES, runConnect, runConnectorsList, runDisconnect, runSync, type ConnectorType } from "./commands/connect.js";
 import { runDoctor } from "./commands/doctor.js";
+import { runMcpAdd, runMcpList, runMcpRemove } from "./commands/mcp.js";
+import { serveMcp } from "../mcp/server.js";
 import { runLogin, runLogout } from "./commands/login.js";
 import { runOnce } from "./commands/run.js";
 import { printSearch } from "./commands/search.js";
@@ -103,7 +105,7 @@ async function main(promptParts: string[], opts: MainOptions): Promise<number> {
   }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 500 });
-  const engine = Engine.create({
+  const engine = await Engine.open({
     overrides: {
       ...(opts.mode ? { permissionMode: opts.mode } : {}),
       ...(opts.model ? { model: opts.model } : {}),
@@ -113,9 +115,15 @@ async function main(promptParts: string[], opts: MainOptions): Promise<number> {
     resume,
   });
   process.stdout.write(banner(engine.root, engine.index.fileCount, engine.config.model, engine.gate.mode) + "\n");
+  const sources = engine.index.sources();
+  if (sources.length) process.stdout.write(pc.dim(`  sources ${sources.map((x) => `${x.id} (${x.docs})`).join(" · ")}\n`));
+  for (const m of engine.mcpStatus) {
+    process.stdout.write(m.ok ? pc.dim(`  mcp ${m.name} · ${m.tools.length} tools\n`) : pc.yellow(`  ! mcp ${m.name} unavailable: ${m.error}\n`));
+  }
   if (resume) process.stdout.write(pc.dim(`  resumed session ${resume}: ${engine.session.title}\n`));
   process.stdout.write("\n");
   await runRepl(engine, rl, { showThinking: opts.thinking });
+  await engine.close();
   return 0;
 }
 
@@ -272,6 +280,38 @@ function build(): Command {
     .option("--stdio", "use stdin/stdout (default)")
     .action(async () => {
       await serveStdio();
+    });
+
+  const mcp = program.command("mcp").description("use MCP servers as tools, or serve Codify Buddy's context over MCP");
+  mcp
+    .command("add <name> [command...]")
+    .description("add an MCP server: `codify mcp add files -- npx -y @modelcontextprotocol/server-filesystem .` or `--url`")
+    .option("--url <url>", "streamable HTTP server URL")
+    .option("--header <k=v...>", "HTTP headers")
+    .option("--env <k=v...>", "environment variables for a stdio server")
+    .option("--trusted", "run this server's tools without asking")
+    .option("-g, --global", "save to ~/.codify")
+    .action(async (name: string, command: string[], o) => {
+      process.exitCode = await runMcpAdd(name, command, o);
+    });
+  mcp
+    .command("list")
+    .description("connect to configured MCP servers and list their tools")
+    .action(async () => {
+      process.exitCode = await runMcpList();
+    });
+  mcp
+    .command("remove <name>")
+    .description("remove an MCP server")
+    .option("-g, --global", "remove from ~/.codify")
+    .action((name: string, o: { global?: boolean }) => {
+      process.exitCode = runMcpRemove(name, o);
+    });
+  mcp
+    .command("serve")
+    .description("serve this project's context (code + connected docs) as a read-only MCP server on stdio")
+    .action(async () => {
+      await serveMcp();
     });
 
   return program;

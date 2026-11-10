@@ -5,6 +5,7 @@ import { ContextIndex, indexOptionsFor, type UpdateStats } from "../context/inde
 import { buildRepoMap } from "../context/repomap.js";
 import type { FetchLike } from "../connectors/http.js";
 import { ConnectorManager } from "../connectors/manager.js";
+import { McpHub, type McpServerStatus } from "../mcp/client.js";
 import { createClient } from "../model/client.js";
 import { AnthropicTransport, type ModelTransport } from "../model/transport.js";
 import { PermissionGate, type PermissionPrompter } from "../tools/permissions.js";
@@ -40,6 +41,9 @@ export class Engine {
   readonly tools: ToolRegistry;
   readonly gate: PermissionGate;
   readonly connectors: ConnectorManager;
+  readonly mcp = new McpHub();
+  mcpStatus: McpServerStatus[] = [];
+  private resumed: boolean;
   session: SessionData;
   private agent: Agent;
   private readonly persist: boolean;
@@ -59,6 +63,7 @@ export class Engine {
 
     const resumed = opts.resume ? loadSession(this.root, opts.resume) : null;
     if (opts.resume && !resumed) throw new Error(`Session not found: ${opts.resume}`);
+    this.resumed = !!resumed;
     this.session = resumed ?? this.freshSession();
     this.agent = new Agent({
       config: this.config,
@@ -74,11 +79,33 @@ export class Engine {
     return new Engine(opts, transport);
   }
 
+  /**
+   * Create an engine and connect its MCP servers. MCP tools are registered
+   * before the session starts so the tool list (part of the cached prompt
+   * prefix) is fixed for the whole session.
+   */
+  static async open(opts: EngineOptions = {}): Promise<Engine> {
+    const engine = Engine.create(opts);
+    const servers = engine.config.mcp.servers;
+    if (Object.keys(servers).length) {
+      engine.mcpStatus = await engine.mcp.connectAll(servers);
+      for (const t of engine.mcp.tools()) if (!engine.tools.get(t.name)) engine.tools.register(t);
+      if (!engine.resumed) engine.session = engine.freshSession();
+    }
+    return engine;
+  }
+
+  /** Release external resources (MCP server processes and connections). */
+  async close(): Promise<void> {
+    await this.mcp.close();
+  }
+
   private freshSession(): SessionData {
     const systemContext = buildSessionContext({
       root: this.root,
       repoMap: buildRepoMap(this.index, this.config.context.repoMapTokens),
       sources: this.index.sources().map((src) => `${src.id} (${src.label}): ${src.docs} documents`),
+      extraTools: this.mcpStatus.filter((m) => m.ok).map((m) => `MCP server "${m.name}": ${m.tools.length} tools (prefixed mcp__${m.name}__)`),
       memory: loadProjectMemory(this.root),
       date: new Date().toISOString().slice(0, 10),
     });

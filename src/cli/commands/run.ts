@@ -23,7 +23,7 @@ export async function runOnce(opts: RunOptions): Promise<number> {
   let rl: readline.Interface | null = null;
   const getRl = () => (rl ??= readline.createInterface({ input: process.stdin, output: process.stdout }));
 
-  const engine = Engine.create({
+  const engine = await Engine.open({
     overrides: {
       ...(mode ? { permissionMode: mode } : {}),
       ...(opts.model ? { model: opts.model } : {}),
@@ -37,6 +37,7 @@ export async function runOnce(opts: RunOptions): Promise<number> {
   const onSigint = () => controller.abort();
   process.on("SIGINT", onSigint);
 
+  for (const m of engine.mcpStatus) if (!m.ok) process.stderr.write(`! MCP server "${m.name}" unavailable: ${m.error}\n`);
   const sink = opts.json
     ? (ev: EngineEvent) => process.stdout.write(JSON.stringify(ev) + "\n")
     : new TerminalRenderer({ showThinking: opts.showThinking }).handle;
@@ -47,5 +48,6 @@ export async function runOnce(opts: RunOptions): Promise<number> {
   } finally {
     process.off("SIGINT", onSigint);
     (rl as readline.Interface | null)?.close();
+    await engine.close();
   }
 }

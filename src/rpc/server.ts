@@ -43,7 +43,7 @@ export class RpcServer {
   constructor(
     private readonly input: Readable,
     private readonly output: Writable,
-    private readonly engineFactory: (opts: EngineOptions) => Engine = Engine.create,
+    private readonly engineFactory: (opts: EngineOptions) => Engine | Promise<Engine> = Engine.open,
   ) {
     const rl = readline.createInterface({ input });
     rl.on("line", (line) => void this.onLine(line));
@@ -110,7 +110,8 @@ export class RpcServer {
   private async dispatch(method: string, p: Record<string, unknown>): Promise<unknown> {
     switch (method) {
       case "initialize": {
-        this.engine = this.engineFactory({
+        await this.engine?.close();
+        this.engine = await this.engineFactory({
           cwd: typeof p.cwd === "string" ? p.cwd : undefined,
           resume: typeof p.resume === "string" ? p.resume : undefined,
           overrides: {
@@ -155,6 +156,7 @@ export class RpcServer {
         return listSessions(this.requireEngine().root);
       case "shutdown":
         this.controller?.abort();
+        await this.engine?.close();
         setImmediate(() => this.input.destroy());
         return null;
       default:
