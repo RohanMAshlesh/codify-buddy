@@ -184,6 +184,52 @@ export function setConfigValue(file: string, key: string, value: unknown): void 
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
 }
 
+function writeValidated(file: string, data: Record<string, unknown>): void {
+  const candidate = ConfigSchema.safeParse(data);
+  if (!candidate.success) {
+    const i = candidate.error.issues[0];
+    throw new Error(`Invalid configuration: ${i ? `${i.path.join(".")}: ${i.message}` : "rejected"}`);
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
+}
+
+/** Add or replace (by id) a connector in a config file. */
+export function upsertConnector(file: string, connector: Record<string, unknown>): void {
+  const data = readJson(file);
+  const list = Array.isArray(data.connectors) ? (data.connectors as Array<Record<string, unknown>>) : [];
+  const i = list.findIndex((c) => c.id === connector.id);
+  if (i >= 0) list[i] = connector;
+  else list.push(connector);
+  writeValidated(file, { ...data, connectors: list });
+}
+
+/** Remove a connector by id. Returns false when it wasn't in this file. */
+export function removeConnector(file: string, id: string): boolean {
+  const data = readJson(file);
+  const list = Array.isArray(data.connectors) ? (data.connectors as Array<Record<string, unknown>>) : [];
+  const next = list.filter((c) => c.id !== id);
+  if (next.length === list.length) return false;
+  writeValidated(file, { ...data, connectors: next });
+  return true;
+}
+
+/** Add or replace an MCP server entry. */
+export function upsertMcpServer(file: string, name: string, server: Record<string, unknown>): void {
+  const data = readJson(file);
+  const mcp = (data.mcp && typeof data.mcp === "object" ? data.mcp : {}) as { servers?: Record<string, unknown> };
+  writeValidated(file, { ...data, mcp: { ...mcp, servers: { ...mcp.servers, [name]: server } } });
+}
+
+export function removeMcpServer(file: string, name: string): boolean {
+  const data = readJson(file);
+  const mcp = (data.mcp ?? {}) as { servers?: Record<string, unknown> };
+  if (!mcp.servers?.[name]) return false;
+  delete mcp.servers[name];
+  writeValidated(file, { ...data, mcp });
+  return true;
+}
+
 /** Parse a CLI string into a JSON value where possible ("12" → 12, "true" → true). */
 export function parseConfigValue(input: string): unknown {
   try {
