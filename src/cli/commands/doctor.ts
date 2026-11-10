@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { globalConfigFile, loadConfig, projectConfigFile } from "../../config/config.js";
-import { maskKey, resolveCredentials } from "../../config/credentials.js";
+import { maskKey, resolveCredentials, resolveTeam } from "../../config/credentials.js";
+import { TeamClient } from "../../team/client.js";
 import { findProjectRoot, projectDir } from "../../config/paths.js";
 import { ContextIndex, indexOptionsFor } from "../../context/index.js";
 import { ConnectorManager } from "../../connectors/manager.js";
@@ -42,8 +43,25 @@ export async function runDoctor(opts: { cwd?: string; offline?: boolean; json?: 
     add({ name: "Config", status: "fail", detail: (err as Error).message, fix: "Fix or delete the config file shown above." });
   }
 
+  const team = resolveTeam();
+  if (team) {
+    if (opts.offline) add({ name: "Team", status: "ok", detail: `${team.url}${team.email ? ` as ${team.email}` : ""} (not checked offline)` });
+    else {
+      try {
+        const client = new TeamClient(team.url, team.token);
+        const [me, budget] = await Promise.all([client.me(), client.budget()]);
+        const spend = budget.limitUsd ? ` · $${budget.usedUsd.toFixed(2)} of $${budget.limitUsd} this month` : "";
+        add({ name: "Team", status: budget.blocked ? "fail" : "ok", detail: `${team.url} as ${me.email}${spend}`, fix: budget.blocked ? "Your monthly budget is used up; ask a team admin." : undefined });
+      } catch (err) {
+        add({ name: "Team", status: "fail", detail: (err as Error).message, fix: `Run \`codify login --team ${team.url}\`.` });
+      }
+    }
+  }
+
   const creds = resolveCredentials();
-  if (creds.source === "none") {
+  if (creds.source === "none" && team) {
+    add({ name: "Credentials", status: "ok", detail: "none needed: model traffic goes through the team gateway" });
+  } else if (creds.source === "none") {
     add({ name: "Credentials", status: "fail", detail: "no API key found", fix: "Run `codify login` or export ANTHROPIC_API_KEY." });
   } else {
     const shown = creds.apiKey ? maskKey(creds.apiKey) : "token";

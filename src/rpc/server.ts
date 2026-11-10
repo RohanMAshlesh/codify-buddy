@@ -145,6 +145,7 @@ export class RpcServer {
       sessionId: e.session.id,
       sources: e.index.sources(),
       mcp: e.mcpStatus,
+      team: e.team ? { url: e.team.client.url, email: e.team.identity.email, groups: e.team.identity.groups, maxMode: e.team.policy.maxPermissionMode } : null,
     };
   }
 
