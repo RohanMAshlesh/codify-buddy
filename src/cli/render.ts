@@ -78,6 +78,10 @@ export class TerminalRenderer {
       case "tool_result":
         this.write((ev.ok ? pc.green("  ⎿ ") : pc.red("  ⎿ ")) + pc.dim(ev.summary) + "\n");
         if (ev.diff) this.write(colorDiff(ev.diff) + "\n");
+        if (ev.display) {
+          const paint = (l: string) => (/not ok|fail|error|✖|×/i.test(l) && !/# fail 0\b/.test(l) ? pc.red(l) : /\bok\b|pass/i.test(l) ? pc.green(l) : pc.dim(l));
+          this.write(ev.display.split("\n").map((l) => "    " + paint(l)).join("\n") + "\n");
+        }
         break;
       case "usage":
         this.lastUsage = { session: ev.session, cost: ev.costUsd };
@@ -91,7 +95,9 @@ export class TerminalRenderer {
       case "turn_end":
         this.inThinking = false;
         this.newline();
-        if (this.lastUsage) this.write(pc.dim(formatUsage(this.lastUsage.session, this.lastUsage.cost)) + "\n");
+        if (this.lastUsage && (this.lastUsage.session.inputTokens || this.lastUsage.session.outputTokens)) {
+          this.write(pc.dim(formatUsage(this.lastUsage.session, this.lastUsage.cost)) + "\n");
+        }
         break;
     }
   };

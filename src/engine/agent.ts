@@ -211,7 +211,7 @@ export class Agent {
       if (verdict.decision === "deny") return fail(`Permission denied: ${verdict.reason}`, `denied: ${description}`);
 
       const out = await tool.run(input, toolContext);
-      emit({ type: "tool_result", id: use.id, name: use.name, ok: !out.isError, summary: out.summary ?? description, diff: out.diff });
+      emit({ type: "tool_result", id: use.id, name: use.name, ok: !out.isError, summary: out.summary ?? description, diff: out.diff, display: out.display });
       return { type: "tool_result", tool_use_id: use.id, is_error: out.isError || undefined, content: out.content };
     } catch (err) {
       return fail(`Error: ${(err as Error).message}`);

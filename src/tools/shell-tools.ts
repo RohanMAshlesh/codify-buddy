@@ -37,6 +37,24 @@ export function exec(command: string, args: string[], opts: { cwd: string; timeo
   });
 }
 
+const FAILURE = [/^\s*not ok \d+/, /^\s*(✖|✗|×)\s/, /^\s*FAIL\b/, /\b\d+ (failed|failing)\b/, /^\s*Error: \S/, /^\s*(expected|actual): \S/];
+const SUMMARY = [/^\s*# (tests|pass|fail) \d+/, /^\s*(Tests?|Test Files|Test Suites):\s/, /\b\d+ (passed|passing)\b/];
+const SUCCESS = [/^\s*ok \d+ /, /^\s*(✓|✔)\s/];
+
+/** Pick the lines a person wants to see from command output: failures first, then test summaries. */
+export function highlights(output: string, max = 6): string | undefined {
+  const lines = output.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim() && l.length < 200);
+  const pick = (res: RegExp[]) => lines.filter((l) => res.some((r) => r.test(l)));
+  const failures = pick(FAILURE);
+  const summary = pick(SUMMARY);
+  const chosen = [...failures.slice(0, Math.max(1, max - summary.length)), ...summary].slice(0, max);
+  if (chosen.length) return chosen.map((l) => l.trim()).join("\n");
+  const ok = pick(SUCCESS);
+  if (ok.length) return ok.slice(-max).map((l) => l.trim()).join("\n");
+  const tail = lines.slice(-3);
+  return tail.length ? tail.join("\n") : undefined;
+}
+
 function formatExec(r: ExecResult): string {
   const parts = [];
   if (r.stdout.trim()) parts.push(`<stdout>\n${truncateMiddle(r.stdout.trimEnd(), 10_000)}\n</stdout>`);
@@ -63,6 +81,7 @@ export const runCommandTool: Tool<{ command: string; cwd?: string; timeout_ms?: 
       content: formatExec(r),
       isError: r.code !== 0,
       summary: `$ ${input.command} → ${r.timedOut ? "timeout" : `exit ${r.code}`}`,
+      display: highlights(r.stdout + "\n" + r.stderr),
     };
   },
 };

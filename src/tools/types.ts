@@ -20,6 +20,8 @@ export interface ToolOutput {
   summary?: string;
   /** Optional diff preview for write tools. */
   diff?: string;
+  /** A few lines worth showing the user under the summary (e.g. failing tests). */
+  display?: string;
 }
 
 export interface Tool<I = unknown> {
