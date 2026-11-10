@@ -1,3 +1,4 @@
+import { splitLines } from "../util/tokens.js";
 import { CODE_LANGS } from "./languages.js";
 
 export type ChunkKind = "function" | "class" | "type" | "method" | "section" | "module" | "window";
@@ -162,7 +163,7 @@ function chunkMarkdown(lines: string[]): Chunk[] {
 
 /** Split a file into retrieval chunks aligned to symbols where possible. */
 export function chunkFile(content: string, language: string): Chunk[] {
-  const lines = content.split(/\r?\n/);
+  const lines = splitLines(content);
   if (language === "markdown") return chunkMarkdown(lines);
   if (!CODE_LANGS.has(language)) return windows(lines, 0, lines.length - 1, { kind: "window" }).filter((c) => c.text.trim());
 

@@ -11,3 +11,10 @@ export function truncateMiddle(text: string, maxTokens: number): string {
   const dropped = text.length - 2 * half;
   return `${text.slice(0, half)}\n\n… [${dropped} characters truncated] …\n\n${text.slice(-half)}`;
 }
+
+/** Split text into lines, ignoring the empty "line" after a final newline. */
+export function splitLines(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
