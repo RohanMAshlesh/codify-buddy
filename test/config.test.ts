@@ -58,8 +58,10 @@ describe("credentials", () => {
     saveApiKey("sk-ant-stored-123456789");
     expect(resolveCredentials({}).source).toBe("file");
     expect(resolveCredentials({ ANTHROPIC_API_KEY: "sk-env" }).apiKey).toBe("sk-env");
-    const mode = fs.statSync(path.join(home, "credentials.json")).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (process.platform !== "win32") {
+      const mode = fs.statSync(path.join(home, "credentials.json")).mode & 0o777;
+      expect(mode).toBe(0o600);
+    }
   });
 
   it("masks keys", () => {

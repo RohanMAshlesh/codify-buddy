@@ -17,7 +17,7 @@ describe("resolveInRoot", () => {
     expect(() => resolveInRoot(root, "/etc/passwd")).toThrow(PathEscapeError);
   });
 
-  it("rejects symlinks that point outside", () => {
+  it.skipIf(process.platform === "win32")("rejects symlinks that point outside", () => {
     const root = makeTempDir();
     const outside = makeTempDir({ "secret.txt": "s" });
     fs.symlinkSync(outside, path.join(root, "link"));
