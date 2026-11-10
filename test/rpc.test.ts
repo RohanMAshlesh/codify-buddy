@@ -133,3 +133,21 @@ describe("RpcServer IDE methods", () => {
     expect((await got).error.code).toBe(-32001);
   });
 });
+
+describe("transcriptOf", () => {
+  it("keeps user prompts and assistant text, drops tool traffic", async () => {
+    const { transcriptOf } = await import("../src/rpc/server.js");
+    expect(
+      transcriptOf([
+        { role: "user", content: "hi" },
+        { role: "assistant", content: [{ type: "thinking", thinking: "" }, { type: "text", text: "Looking." }, { type: "tool_use" }] },
+        { role: "user", content: [{ type: "tool_result" }] },
+        { role: "assistant", content: [{ type: "text", text: "Done." }] },
+      ]),
+    ).toEqual([
+      { role: "user", text: "hi" },
+      { role: "assistant", text: "Looking." },
+      { role: "assistant", text: "Done." },
+    ]);
+  });
+});

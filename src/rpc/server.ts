@@ -189,7 +189,7 @@ export class RpcServer {
         const s = typeof p.id === "string" ? loadSession(e.root, p.id) : null;
         if (!s) throw invalid(`Session not found: ${String(p.id)}`);
         e.session = s;
-        return { sessionId: s.id, title: s.title, messages: s.messages.length };
+        return { sessionId: s.id, title: s.title, transcript: transcriptOf(s.messages) };
       }
       case "chat/send": {
         const e = this.requireEngine();
@@ -231,6 +231,19 @@ export class RpcServer {
         throw Object.assign(new Error(`Method not found: ${method}`), { code: ERR_METHOD });
     }
   }
+}
+
+/** User prompts and assistant replies as plain text, for re-rendering a resumed session. */
+export function transcriptOf(messages: ReadonlyArray<{ role: string; content?: unknown }>): Array<{ role: "user" | "assistant"; text: string }> {
+  const out: Array<{ role: "user" | "assistant"; text: string }> = [];
+  for (const m of messages) {
+    if (m.role === "user" && typeof m.content === "string") out.push({ role: "user", text: m.content });
+    if (m.role === "assistant" && Array.isArray(m.content)) {
+      const text = (m.content as Array<{ type: string; text?: string }>).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+      if (text.trim()) out.push({ role: "assistant", text });
+    }
+  }
+  return out;
 }
 
 export async function serveStdio(): Promise<void> {
