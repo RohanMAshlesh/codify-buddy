@@ -3,6 +3,8 @@ import { resolveCredentials, type Credentials } from "../config/credentials.js";
 import { findProjectRoot } from "../config/paths.js";
 import { ContextIndex, type UpdateStats } from "../context/index.js";
 import { buildRepoMap } from "../context/repomap.js";
+import type { FetchLike } from "../connectors/http.js";
+import { ConnectorManager } from "../connectors/manager.js";
 import { createClient } from "../model/client.js";
 import { AnthropicTransport, type ModelTransport } from "../model/transport.js";
 import { PermissionGate, type PermissionPrompter } from "../tools/permissions.js";
@@ -23,6 +25,8 @@ export interface EngineOptions {
   resume?: string;
   /** Persist sessions to disk (default true). */
   persist?: boolean;
+  /** HTTP client for connectors (tests). */
+  fetch?: FetchLike;
 }
 
 /**
@@ -35,6 +39,7 @@ export class Engine {
   readonly index: ContextIndex;
   readonly tools: ToolRegistry;
   readonly gate: PermissionGate;
+  readonly connectors: ConnectorManager;
   session: SessionData;
   private agent: Agent;
   private readonly persist: boolean;
@@ -48,6 +53,8 @@ export class Engine {
     this.index.load();
     this.lastIndexStats = this.index.update();
     this.tools = new ToolRegistry();
+    this.connectors = new ConnectorManager(this.config.connectors, { root: this.root, fetch: opts.fetch });
+    for (const t of this.connectors.tools()) this.tools.register(t);
     this.gate = new PermissionGate(this.config.permissionMode, opts.prompter);
 
     const resumed = opts.resume ? loadSession(this.root, opts.resume) : null;
