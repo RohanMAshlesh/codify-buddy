@@ -44,6 +44,7 @@ const invalid = (message: string) => Object.assign(new Error(message), { code: E
 
 export class RpcServer {
   private engine: Engine | null = null;
+  private initializing: Promise<unknown> | null = null;
   private controller: AbortController | null = null;
   private nextId = 1;
   private pending = new Map<number, (msg: RpcMessage) => void>();
@@ -105,9 +106,32 @@ export class RpcServer {
     }
   }
 
-  private requireEngine(): Engine {
+  /** Waits for an in-flight `initialize`, so pipelined requests don't race it. */
+  private async requireEngine(): Promise<Engine> {
+    if (this.initializing) await this.initializing.catch(() => undefined);
     if (!this.engine) throw Object.assign(new Error("Call initialize first"), { code: ERR_NOT_INITIALIZED });
     return this.engine;
+  }
+
+  private async initialize(p: Record<string, unknown>) {
+    await this.engine?.close();
+    this.engine = null;
+    try {
+      this.engine = await this.engineFactory({
+        cwd: typeof p.cwd === "string" ? p.cwd : undefined,
+        resume: typeof p.resume === "string" ? p.resume : undefined,
+        overrides: {
+          ...(typeof p.mode === "string" ? { permissionMode: p.mode as never } : {}),
+          ...(typeof p.model === "string" ? { model: p.model } : {}),
+          ...(typeof p.effort === "string" ? { effort: p.effort as never } : {}),
+        },
+        prompter: (req) => this.askPermission(req),
+      });
+    } catch (err) {
+      if (err instanceof MissingCredentialsError) throw Object.assign(new Error(err.message), { code: ERR_MISSING_CREDENTIALS });
+      throw err;
+    }
+    return this.describe(this.engine);
   }
 
   private describe(e: Engine) {
@@ -133,45 +157,34 @@ export class RpcServer {
   private async dispatch(method: string, p: Record<string, unknown>): Promise<unknown> {
     switch (method) {
       case "initialize": {
-        await this.engine?.close();
-        this.engine = null;
+        const run = this.initialize(p);
+        this.initializing = run;
         try {
-          this.engine = await this.engineFactory({
-          cwd: typeof p.cwd === "string" ? p.cwd : undefined,
-          resume: typeof p.resume === "string" ? p.resume : undefined,
-          overrides: {
-            ...(typeof p.mode === "string" ? { permissionMode: p.mode as never } : {}),
-            ...(typeof p.model === "string" ? { model: p.model } : {}),
-            ...(typeof p.effort === "string" ? { effort: p.effort as never } : {}),
-          },
-          prompter: (req) => this.askPermission(req),
-          });
-        } catch (err) {
-          if (err instanceof MissingCredentialsError) throw Object.assign(new Error(err.message), { code: ERR_MISSING_CREDENTIALS });
-          throw err;
+          return await run;
+        } finally {
+          if (this.initializing === run) this.initializing = null;
         }
-        return this.describe(this.engine);
       }
       case "chat/setMode": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         if (!PERMISSION_MODES.includes(p.mode as PermissionMode)) throw invalid(`mode must be one of ${PERMISSION_MODES.join(", ")}`);
         e.gate.mode = p.mode as PermissionMode;
         return { mode: e.gate.mode };
       }
       case "chat/setEffort": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         if (!EFFORTS.includes(p.effort as Effort)) throw invalid(`effort must be one of ${EFFORTS.join(", ")}`);
         e.config.effort = p.effort as Effort;
         return { effort: e.config.effort };
       }
       case "chat/setModel": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         if (typeof p.model !== "string" || !p.model.trim()) throw invalid("model is required");
         e.config.model = p.model;
         return { model: e.config.model };
       }
       case "context/read": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         if (typeof p.path !== "string" || !p.path) throw invalid("path is required");
         const input = {
           path: p.path,
@@ -183,16 +196,16 @@ export class RpcServer {
         return { content: out.content, ...(doc ? { title: doc.title, url: doc.url, source: doc.sourceLabel, text: doc.text } : {}) };
       }
       case "sources/list":
-        return this.requireEngine().index.sources();
+        return (await this.requireEngine()).index.sources();
       case "sessions/resume": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         const s = typeof p.id === "string" ? loadSession(e.root, p.id) : null;
         if (!s) throw invalid(`Session not found: ${String(p.id)}`);
         e.session = s;
         return { sessionId: s.id, title: s.title, transcript: transcriptOf(s.messages) };
       }
       case "chat/send": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         if (typeof p.text !== "string" || !p.text.trim()) throw Object.assign(new Error("text is required"), { code: -32602 });
         if (this.controller) throw new Error("A turn is already running; cancel it first");
         this.controller = new AbortController();
@@ -208,12 +221,12 @@ export class RpcServer {
         return { cancelled: running };
       }
       case "chat/reset": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         e.reset();
         return { sessionId: e.session.id };
       }
       case "context/search": {
-        const e = this.requireEngine();
+        const e = await this.requireEngine();
         return e.index.search(String(p.query ?? ""), {
           limit: typeof p.limit === "number" ? p.limit : 10,
           scope: p.scope === "code" || p.scope === "docs" ? p.scope : "all",
@@ -221,7 +234,7 @@ export class RpcServer {
         });
       }
       case "sessions/list":
-        return listSessions(this.requireEngine().root);
+        return listSessions((await this.requireEngine()).root);
       case "shutdown":
         this.controller?.abort();
         await this.engine?.close();

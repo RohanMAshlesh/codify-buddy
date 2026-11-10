@@ -151,3 +151,14 @@ describe("transcriptOf", () => {
     ]);
   });
 });
+
+describe("RpcServer ordering", () => {
+  it("lets requests sent right after initialize wait for it", async () => {
+    const h = harness([]);
+    h.send({ id: 1, method: "initialize", params: { cwd: h.root } });
+    h.send({ id: 2, method: "context/search", params: { query: "alpha" } });
+    const search = await h.waitFor((m) => m.id === 2);
+    expect(search.error).toBeUndefined();
+    expect(search.result.hits[0].citation).toBe("src/a.ts:1-3");
+  });
+});
