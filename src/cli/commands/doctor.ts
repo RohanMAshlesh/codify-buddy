@@ -4,7 +4,8 @@ import pc from "picocolors";
 import { globalConfigFile, loadConfig, projectConfigFile } from "../../config/config.js";
 import { maskKey, resolveCredentials } from "../../config/credentials.js";
 import { findProjectRoot, projectDir } from "../../config/paths.js";
-import { ContextIndex } from "../../context/index.js";
+import { ContextIndex, indexOptionsFor } from "../../context/index.js";
+import { ConnectorManager } from "../../connectors/manager.js";
 import { createClient, describeApiError } from "../../model/client.js";
 
 type Status = "ok" | "warn" | "fail";
@@ -62,7 +63,7 @@ export async function runDoctor(opts: { cwd?: string; offline?: boolean; json?: 
     fs.mkdirSync(projectDir(root), { recursive: true });
     fs.accessSync(projectDir(root), fs.constants.W_OK);
     if (config) {
-      const idx = new ContextIndex(root, config.context);
+      const idx = new ContextIndex(root, indexOptionsFor(root, config));
       const loaded = idx.load();
       const st = idx.update();
       add({
@@ -70,6 +71,18 @@ export async function runDoctor(opts: { cwd?: string; offline?: boolean; json?: 
         status: "ok",
         detail: `${idx.fileCount} files · ${idx.chunkCount} chunks · ${loaded ? `refreshed in ${st.ms}ms` : `built in ${st.ms}ms`}`,
       });
+      const manager = new ConnectorManager(config.connectors, { root });
+      const synced = new Map(idx.sources().map((s) => [s.id, s]));
+      for (const c of manager.connectors) {
+        const s = synced.get(c.id);
+        const syncInfo = s ? `${s.docs} docs synced ${s.syncedAt.slice(0, 10)}` : "not synced";
+        if (opts.offline) {
+          add({ name: `· ${c.id}`, status: s ? "ok" : "warn", detail: `${c.label} · ${syncInfo}`, fix: s ? undefined : `Run \`codify sync ${c.id}\`.` });
+          continue;
+        }
+        const t = await c.test();
+        add({ name: `· ${c.id}`, status: t.ok ? (s ? "ok" : "warn") : "fail", detail: `${t.detail} · ${syncInfo}`, fix: t.ok ? `Run \`codify sync ${c.id}\`.` : `Re-run \`codify connect ${c.type}\`.` });
+      }
     }
   } catch (err) {
     add({ name: "Index", status: "fail", detail: (err as Error).message, fix: `Make ${projectDir(root)} writable.` });

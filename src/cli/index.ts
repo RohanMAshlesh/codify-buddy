@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import readline from "node:readline";
-import { Command, Option } from "commander";
+import { Argument, Command, Option } from "commander";
 import pc from "picocolors";
 import pkg from "../../package.json" with { type: "json" };
 import {
@@ -15,10 +15,11 @@ import {
 } from "../config/config.js";
 import { resolveCredentials } from "../config/credentials.js";
 import { findProjectRoot } from "../config/paths.js";
-import { ContextIndex } from "../context/index.js";
+import { ContextIndex, indexOptionsFor } from "../context/index.js";
 import { Engine } from "../engine/engine.js";
 import { listSessions } from "../engine/session.js";
 import { MissingCredentialsError } from "../model/client.js";
+import { CONNECTOR_TYPES, runConnect, runConnectorsList, runDisconnect, runSync, type ConnectorType } from "./commands/connect.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runLogin, runLogout } from "./commands/login.js";
 import { runOnce } from "./commands/run.js";
@@ -162,7 +163,7 @@ function build(): Command {
     .option("--rebuild", "discard the existing index first")
     .action((o: { rebuild?: boolean }) => {
       const root = findProjectRoot();
-      const idx = new ContextIndex(root, loadConfig(root).context);
+      const idx = new ContextIndex(root, indexOptionsFor(root, loadConfig(root)));
       if (!o.rebuild) idx.load();
       const st = idx.update();
       process.stdout.write(
@@ -180,10 +181,53 @@ function build(): Command {
     .option("--json", "output JSON")
     .action((query: string[], o: { limit: string; path?: string; json?: boolean }) => {
       const root = findProjectRoot();
-      const idx = new ContextIndex(root, loadConfig(root).context);
+      const idx = new ContextIndex(root, indexOptionsFor(root, loadConfig(root)));
       idx.load();
       idx.update();
       printSearch(idx, query.join(" "), { limit: Number(o.limit), pathFilter: o.path, json: o.json });
+    });
+
+  program
+    .command("connect")
+    .description("connect a context source: github, confluence, jira or docs")
+    .addArgument(new Argument("<type>", "source type").choices([...CONNECTOR_TYPES]))
+    .option("--id <id>", "connector id (default: the type)")
+    .option("--label <label>", "display name")
+    .option("--repo <owner/name>", "GitHub repository (default: from git remote)")
+    .option("--url <url>", "Confluence or Jira base URL")
+    .addOption(new Option("--flavor <flavor>", "Atlassian deployment").choices(["cloud", "datacenter"]))
+    .option("--email <email>", "Atlassian account email (Cloud)")
+    .option("--space <keys...>", "Confluence space keys")
+    .option("--jql <jql>", "Jira issues to index")
+    .option("--path <dir>", "docs folder")
+    .option("-g, --global", "save to ~/.codify instead of this project")
+    .option("--no-sync", "don't index right away")
+    .option("-y, --yes", "never prompt (for scripts)")
+    .action(async (type: ConnectorType, o) => {
+      process.exitCode = await runConnect(type, o);
+    });
+
+  program
+    .command("connectors")
+    .description("list connected sources and their sync status")
+    .option("--json", "output JSON")
+    .action((o: { json?: boolean }) => runConnectorsList(o.json));
+
+  program
+    .command("sync")
+    .description("index documents from connected sources (all by default)")
+    .argument("[ids...]")
+    .action(async (ids: string[]) => {
+      process.exitCode = await runSync(ids);
+    });
+
+  program
+    .command("disconnect <id>")
+    .description("remove a connector and its indexed documents")
+    .option("-g, --global", "remove from ~/.codify config")
+    .option("--forget-token", "also delete its stored token")
+    .action((id: string, o: { global?: boolean; forgetToken?: boolean }) => {
+      process.exitCode = runDisconnect(id, o);
     });
 
   program
