@@ -13,6 +13,11 @@ export function createClient(creds: Credentials): Anthropic {
   throw new MissingCredentialsError();
 }
 
+/** A client that sends model traffic through a team server's gateway with the user's team token. */
+export function createGatewayClient(baseURL: string, token: string): Anthropic {
+  return new Anthropic({ baseURL, authToken: token, apiKey: null });
+}
+
 /** Human-readable explanation for an API error, with a hint where possible. */
 export function describeApiError(err: unknown): string {
   if (err instanceof Anthropic.AuthenticationError) return "Authentication failed: the API key was rejected. Run `codify login` to update it.";
