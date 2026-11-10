@@ -146,6 +146,11 @@ export const writeFileTool: Tool<{ path: string; content: string }> = {
     const before = fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : "";
     return lineDiff(before, input.content);
   },
+  async proposed(input, ctx) {
+    const abs = resolveInRoot(ctx.root, input.path);
+    const isNew = !fs.existsSync(abs);
+    return { path: toRel(ctx.root, abs), before: isNew ? "" : fs.readFileSync(abs, "utf8"), after: input.content, isNew };
+  },
   async run(input, ctx) {
     const abs = resolveInRoot(ctx.root, input.path);
     const existed = fs.existsSync(abs);
@@ -187,6 +192,11 @@ export const editFileTool: Tool<{ path: string; old_string: string; new_string: 
     const abs = resolveInRoot(ctx.root, input.path);
     const before = readText(abs, input.path);
     return lineDiff(before, applyEdit(before, input.old_string, input.new_string, !!input.replace_all, input.path));
+  },
+  async proposed(input, ctx) {
+    const abs = resolveInRoot(ctx.root, input.path);
+    const before = readText(abs, input.path);
+    return { path: toRel(ctx.root, abs), before, after: applyEdit(before, input.old_string, input.new_string, !!input.replace_all, input.path), isNew: false };
   },
   async run(input, ctx) {
     const abs = resolveInRoot(ctx.root, input.path);

@@ -5,7 +5,7 @@ import { addUsage, emptyUsage, estimateCost, type Usage } from "../model/pricing
 import { ToolInputParseError, type ModelTransport, type StreamParams } from "../model/transport.js";
 import type { PermissionGate } from "../tools/permissions.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import type { ToolContext } from "../tools/types.js";
+import type { ProposedChange, ToolContext } from "../tools/types.js";
 import type { EventSink } from "./events.js";
 import { BASE_SYSTEM_PROMPT } from "./prompt.js";
 import type { SessionData } from "./session.js";
@@ -206,8 +206,12 @@ export class Agent {
 
     try {
       let preview: string | undefined;
-      if (gate.needsPrompt(tool) && tool.preview) preview = await tool.preview(input, toolContext).catch(() => undefined);
-      const verdict = await gate.check(tool, { tool: tool.name, access: tool.access, description, preview });
+      let change: ProposedChange | undefined;
+      if (gate.needsPrompt(tool)) {
+        if (tool.preview) preview = await tool.preview(input, toolContext).catch(() => undefined);
+        if (tool.proposed) change = await tool.proposed(input, toolContext).catch(() => undefined);
+      }
+      const verdict = await gate.check(tool, { tool: tool.name, access: tool.access, description, preview, change });
       if (verdict.decision === "deny") return fail(`Permission denied: ${verdict.reason}`, `denied: ${description}`);
 
       const out = await tool.run(input, toolContext);

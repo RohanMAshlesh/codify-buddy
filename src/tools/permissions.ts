@@ -1,5 +1,5 @@
 import type { PermissionMode } from "../config/config.js";
-import type { Tool } from "./types.js";
+import type { ProposedChange, Tool } from "./types.js";
 
 export type PermissionDecision = "allow" | "deny";
 export type PermissionAnswer = "allow" | "allow_always" | "deny";
@@ -9,6 +9,8 @@ export interface PermissionRequest {
   access: Tool["access"];
   description: string;
   preview?: string;
+  /** Full file contents before/after, for a native diff view. */
+  change?: ProposedChange;
 }
 
 export type PermissionPrompter = (req: PermissionRequest) => Promise<PermissionAnswer>;

@@ -33,9 +33,19 @@ export interface Tool<I = unknown> {
   jsonSchema?: Record<string, unknown>;
   /** One-line description of a specific call, used in permission prompts. */
   describe(input: I): string;
+  /** Full before/after contents of a file change, so IDEs can show a native diff before approval. */
+  proposed?(input: I, ctx: ToolContext): Promise<ProposedChange | undefined>;
   /** Optional preview (e.g. a diff) shown before asking permission. */
   preview?(input: I, ctx: ToolContext): Promise<string | undefined>;
   run(input: I, ctx: ToolContext): Promise<ToolOutput>;
+}
+
+export interface ProposedChange {
+  /** Project-relative POSIX path. */
+  path: string;
+  before: string;
+  after: string;
+  isNew: boolean;
 }
 
 export class ToolError extends Error {}
