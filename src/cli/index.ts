@@ -20,6 +20,7 @@ import { Engine } from "../engine/engine.js";
 import { listSessions } from "../engine/session.js";
 import { MissingCredentialsError } from "../model/client.js";
 import { CONNECTOR_TYPES, runConnect, runConnectorsList, runDisconnect, runSync, type ConnectorType } from "./commands/connect.js";
+import { runDemo } from "./commands/demo.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runMcpAdd, runMcpList, runMcpRemove } from "./commands/mcp.js";
 import { serveMcp } from "../mcp/server.js";
@@ -144,6 +145,17 @@ function build(): Command {
     .option("--thinking", "show the model's reasoning summary while it works")
     .action(async (parts: string[], opts: MainOptions) => {
       process.exitCode = await main(parts, opts);
+    });
+
+  program
+    .command("demo [dir]")
+    .description("create a sample project and walk through Codify Buddy (live with an API key, replayed without)")
+    .option("--replay", "replay the recorded session even if an API key is set")
+    .option("--live", "run live against the API (asks for a key if needed)")
+    .option("--force", "overwrite an existing demo folder")
+    .option("--fast", "replay without typing delays")
+    .action(async (dir: string | undefined, o) => {
+      process.exitCode = await runDemo(dir, o);
     });
 
   program

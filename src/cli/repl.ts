@@ -28,6 +28,8 @@ ${pc.bold("Tips")}
 
 export interface ReplOptions {
   showThinking?: boolean;
+  /** Text pre-filled at the first prompt (the user can edit it or press Enter). */
+  initialInput?: string;
 }
 
 /** Interactive chat loop. Resolves when the user exits. */
@@ -52,6 +54,7 @@ export async function runRepl(engine: Engine, rl: readline.Interface, opts: Repl
     rl.prompt();
   });
 
+  let prefill = opts.initialInput;
   const readInput = (): Promise<string | null> =>
     new Promise((resolve) => {
       const lines: string[] = [];
@@ -69,6 +72,10 @@ export async function runRepl(engine: Engine, rl: readline.Interface, opts: Repl
           resolve(lines.join("\n"));
         });
       next(pc.magenta("› "));
+      if (prefill) {
+        rl.write(prefill);
+        prefill = undefined;
+      }
     });
 
   for (;;) {
