@@ -88,11 +88,13 @@ export async function runDemo(dirArg: string | undefined, o: DemoOptions): Promi
     prompter: tty ? terminalPrompter(() => (rlReplay ??= readline.createInterface({ input: process.stdin, output: process.stdout }))) : undefined,
   });
   let rlReplay: readline.Interface | undefined;
+  // Keep the walkthrough to one approval: the diff. Commands are pre-approved for this demo only.
+  engine.gate.allowAlways("run_command");
 
   out(rule());
   out(pc.yellow("  ▶ Replay mode") + pc.dim(" — no API key found, so the model's messages are pre-recorded."));
   out(pc.dim("    Every tool call below (search, reads, edits, tests) runs for real against the demo project."));
-  if (tty) out(pc.dim("    You'll be asked to approve the edit, exactly as in a live session."));
+  if (tty) out(pc.dim("    You'll be asked to approve the edit, as in a live session (test commands are pre-approved here)."));
   if (!canRunTests) out(pc.yellow("    npm was not found, so the test steps are skipped."));
   out(rule());
   out();

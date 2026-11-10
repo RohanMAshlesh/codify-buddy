@@ -22,6 +22,11 @@ export class PermissionGate {
 
   constructor(public mode: PermissionMode, private readonly prompter?: PermissionPrompter) {}
 
+  /** Pre-approve a tool for this session (same as answering "always"). */
+  allowAlways(toolName: string): void {
+    this.alwaysAllowed.add(toolName);
+  }
+
   needsPrompt(tool: Tool): boolean {
     if (tool.access === "read") return false;
     if (this.mode === "yolo" || this.mode === "read-only") return false;
