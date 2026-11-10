@@ -75,3 +75,61 @@ describe("RpcServer", () => {
     expect(kinds).toEqual(expect.arrayContaining(["turn_start", "tool_call", "tool_result", "usage", "turn_end"]));
   });
 });
+
+describe("RpcServer IDE methods", () => {
+  it("changes settings, reads files and documents, lists sources", async () => {
+    const h = harness([]);
+    h.send({ id: 1, method: "initialize", params: { cwd: h.root } });
+    const init = (await h.waitFor((m) => m.id === 1)).result;
+    expect(init).toMatchObject({ mode: "ask", effort: "medium", sources: [], mcp: [] });
+    expect(typeof init.version).toBe("string");
+
+    h.send({ id: 2, method: "chat/setMode", params: { mode: "auto-edit" } });
+    expect((await h.waitFor((m) => m.id === 2)).result).toEqual({ mode: "auto-edit" });
+    h.send({ id: 3, method: "chat/setMode", params: { mode: "nope" } });
+    expect((await h.waitFor((m) => m.id === 3)).error.code).toBe(-32602);
+    h.send({ id: 4, method: "chat/setEffort", params: { effort: "high" } });
+    expect((await h.waitFor((m) => m.id === 4)).result).toEqual({ effort: "high" });
+
+    h.send({ id: 5, method: "context/read", params: { path: "src/a.ts", start_line: 2, end_line: 2 } });
+    expect((await h.waitFor((m) => m.id === 5)).result.content).toMatch(/^2\t  return 1;\n/);
+    h.send({ id: 6, method: "context/read", params: { path: "../outside" } });
+    expect((await h.waitFor((m) => m.id === 6)).error.message).toMatch(/escapes/);
+
+    h.send({ id: 7, method: "sources/list" });
+    expect((await h.waitFor((m) => m.id === 7)).result).toEqual([]);
+    h.send({ id: 8, method: "sessions/resume", params: { id: "missing" } });
+    expect((await h.waitFor((m) => m.id === 8)).error.message).toMatch(/not found/);
+  });
+
+  it("sends full before/after contents with write approvals", async () => {
+    const h = harness([
+      reply([{ type: "tool_use", id: "t1", name: "edit_file", input: { path: "src/a.ts", old_string: "return 1", new_string: "return 2" } }], "tool_use"),
+      reply([{ type: "text", text: "ok" }], "end_turn"),
+    ]);
+    h.send({ id: 1, method: "initialize", params: { cwd: h.root } });
+    await h.waitFor((m) => m.id === 1);
+    h.send({ id: 2, method: "chat/send", params: { text: "bump" } });
+    const perm = await h.waitFor((m) => m.method === "permission/request");
+    expect(perm.params.change).toEqual({
+      path: "src/a.ts",
+      before: "export function alpha() {\n  return 1;\n}\n",
+      after: "export function alpha() {\n  return 2;\n}\n",
+      isNew: false,
+    });
+    h.send({ id: perm.id, result: { answer: "deny" } });
+    expect((await h.waitFor((m) => m.id === 2)).result.stopReason).toBe("end_turn");
+  });
+
+  it("reports missing credentials with a dedicated error code", async () => {
+    const { MissingCredentialsError } = await import("../src/model/client.js");
+    const input = new PassThrough();
+    const output = new PassThrough();
+    new RpcServer(input, output, () => {
+      throw new MissingCredentialsError();
+    });
+    const got = new Promise<any>((resolve) => output.once("data", (d: Buffer) => resolve(JSON.parse(d.toString()))));
+    input.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n");
+    expect((await got).error.code).toBe(-32001);
+  });
+});

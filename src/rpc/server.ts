@@ -1,7 +1,11 @@
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { Engine, type EngineOptions } from "../engine/engine.js";
-import { listSessions } from "../engine/session.js";
+import { listSessions, loadSession } from "../engine/session.js";
+import { EFFORTS, PERMISSION_MODES, type Effort, type PermissionMode } from "../config/config.js";
+import { MissingCredentialsError } from "../model/client.js";
+import { readFileTool } from "../tools/fs-tools.js";
+import pkg from "../../package.json" with { type: "json" };
 import type { PermissionAnswer, PermissionRequest } from "../tools/permissions.js";
 
 /**
@@ -32,6 +36,11 @@ const ERR_PARSE = -32700;
 const ERR_METHOD = -32601;
 const ERR_INTERNAL = -32603;
 const ERR_NOT_INITIALIZED = -32002;
+const ERR_INVALID_PARAMS = -32602;
+/** Raised by `initialize` when no API key is configured; clients can prompt for one and retry. */
+export const ERR_MISSING_CREDENTIALS = -32001;
+
+const invalid = (message: string) => Object.assign(new Error(message), { code: ERR_INVALID_PARAMS });
 
 export class RpcServer {
   private engine: Engine | null = null;
@@ -101,6 +110,20 @@ export class RpcServer {
     return this.engine;
   }
 
+  private describe(e: Engine) {
+    return {
+      version: pkg.version,
+      root: e.root,
+      files: e.index.fileCount,
+      model: e.config.model,
+      effort: e.config.effort,
+      mode: e.gate.mode,
+      sessionId: e.session.id,
+      sources: e.index.sources(),
+      mcp: e.mcpStatus,
+    };
+  }
+
   private async askPermission(req: PermissionRequest): Promise<PermissionAnswer> {
     const res = await this.request("permission/request", { ...req });
     const answer = (res.result as { answer?: string } | undefined)?.answer;
@@ -111,7 +134,9 @@ export class RpcServer {
     switch (method) {
       case "initialize": {
         await this.engine?.close();
-        this.engine = await this.engineFactory({
+        this.engine = null;
+        try {
+          this.engine = await this.engineFactory({
           cwd: typeof p.cwd === "string" ? p.cwd : undefined,
           resume: typeof p.resume === "string" ? p.resume : undefined,
           overrides: {
@@ -120,9 +145,51 @@ export class RpcServer {
             ...(typeof p.effort === "string" ? { effort: p.effort as never } : {}),
           },
           prompter: (req) => this.askPermission(req),
-        });
-        const e = this.engine;
-        return { root: e.root, files: e.index.fileCount, model: e.config.model, mode: e.gate.mode, sessionId: e.session.id };
+          });
+        } catch (err) {
+          if (err instanceof MissingCredentialsError) throw Object.assign(new Error(err.message), { code: ERR_MISSING_CREDENTIALS });
+          throw err;
+        }
+        return this.describe(this.engine);
+      }
+      case "chat/setMode": {
+        const e = this.requireEngine();
+        if (!PERMISSION_MODES.includes(p.mode as PermissionMode)) throw invalid(`mode must be one of ${PERMISSION_MODES.join(", ")}`);
+        e.gate.mode = p.mode as PermissionMode;
+        return { mode: e.gate.mode };
+      }
+      case "chat/setEffort": {
+        const e = this.requireEngine();
+        if (!EFFORTS.includes(p.effort as Effort)) throw invalid(`effort must be one of ${EFFORTS.join(", ")}`);
+        e.config.effort = p.effort as Effort;
+        return { effort: e.config.effort };
+      }
+      case "chat/setModel": {
+        const e = this.requireEngine();
+        if (typeof p.model !== "string" || !p.model.trim()) throw invalid("model is required");
+        e.config.model = p.model;
+        return { model: e.config.model };
+      }
+      case "context/read": {
+        const e = this.requireEngine();
+        if (typeof p.path !== "string" || !p.path) throw invalid("path is required");
+        const input = {
+          path: p.path,
+          ...(typeof p.start_line === "number" ? { start_line: p.start_line } : {}),
+          ...(typeof p.end_line === "number" ? { end_line: p.end_line } : {}),
+        };
+        const out = await readFileTool.run(input, { root: e.root, config: e.config, index: e.index });
+        const doc = p.path.startsWith("@") ? e.index.getExternalDoc(p.path) : null;
+        return { content: out.content, ...(doc ? { title: doc.title, url: doc.url, source: doc.sourceLabel, text: doc.text } : {}) };
+      }
+      case "sources/list":
+        return this.requireEngine().index.sources();
+      case "sessions/resume": {
+        const e = this.requireEngine();
+        const s = typeof p.id === "string" ? loadSession(e.root, p.id) : null;
+        if (!s) throw invalid(`Session not found: ${String(p.id)}`);
+        e.session = s;
+        return { sessionId: s.id, title: s.title, messages: s.messages.length };
       }
       case "chat/send": {
         const e = this.requireEngine();
@@ -149,6 +216,7 @@ export class RpcServer {
         const e = this.requireEngine();
         return e.index.search(String(p.query ?? ""), {
           limit: typeof p.limit === "number" ? p.limit : 10,
+          scope: p.scope === "code" || p.scope === "docs" ? p.scope : "all",
           pathFilter: typeof p.pathFilter === "string" ? p.pathFilter : undefined,
         });
       }
