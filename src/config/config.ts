@@ -30,7 +30,86 @@ export const ConfigSchema = z.object({
       extraIgnore: z.array(z.string()).default([]),
     })
     .default({ maxFileBytes: 1_000_000, budgetTokens: 12_000, repoMapTokens: 3_000, extraIgnore: [] }),
+  /** Context sources beyond the project (see `codify connect`). */
+  connectors: z.array(z.lazy(() => ConnectorConfigSchema)).default([]),
+  mcp: z
+    .object({ servers: z.record(z.string(), z.lazy(() => McpServerSchema)).default({}) })
+    .default({ servers: {} }),
 });
+
+const connectorId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, "lowercase letters, digits and dashes");
+
+export const DocsConnectorSchema = z.object({
+  id: connectorId,
+  type: z.literal("docs"),
+  label: z.string().optional(),
+  /** Folder of .md/.txt/.html files (relative to the project root, or absolute). */
+  path: z.string(),
+});
+
+export const GithubConnectorSchema = z.object({
+  id: connectorId,
+  type: z.literal("github"),
+  label: z.string().optional(),
+  /** `owner/name` */
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/name"),
+  apiUrl: z.string().url().default("https://api.github.com"),
+  issues: z.boolean().default(true),
+  pulls: z.boolean().default(true),
+  state: z.enum(["all", "open"]).default("all"),
+  limit: z.number().int().positive().max(5000).default(200),
+  /** Fetch comment threads for this many of the most recently updated items. */
+  commentsFor: z.number().int().min(0).max(500).default(30),
+});
+
+export const ConfluenceConnectorSchema = z.object({
+  id: connectorId,
+  type: z.literal("confluence"),
+  label: z.string().optional(),
+  /** e.g. https://acme.atlassian.net/wiki (Cloud) or https://confluence.acme.com (Data Center) */
+  baseUrl: z.string().url(),
+  flavor: z.enum(["cloud", "datacenter"]).default("cloud"),
+  /** Atlassian account email (Cloud only; not secret). */
+  email: z.string().optional(),
+  spaces: z.array(z.string()).min(1),
+  limit: z.number().int().positive().max(20_000).default(1000),
+});
+
+export const JiraConnectorSchema = z.object({
+  id: connectorId,
+  type: z.literal("jira"),
+  label: z.string().optional(),
+  baseUrl: z.string().url(),
+  flavor: z.enum(["cloud", "datacenter"]).default("cloud"),
+  email: z.string().optional(),
+  /** Optional JQL for issues to index; live search tools work without it. */
+  jql: z.string().optional(),
+  limit: z.number().int().positive().max(10_000).default(300),
+});
+
+export const ConnectorConfigSchema = z.discriminatedUnion("type", [
+  DocsConnectorSchema,
+  GithubConnectorSchema,
+  ConfluenceConnectorSchema,
+  JiraConnectorSchema,
+]);
+export type ConnectorConfig = z.infer<typeof ConnectorConfigSchema>;
+
+export const McpServerSchema = z.union([
+  z.object({
+    command: z.string(),
+    args: z.array(z.string()).default([]),
+    env: z.record(z.string(), z.string()).default({}),
+    /** Tools from this server run without asking (only for servers you trust). */
+    trusted: z.boolean().default(false),
+  }),
+  z.object({
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).default({}),
+    trusted: z.boolean().default(false),
+  }),
+]);
+export type McpServerConfig = z.infer<typeof McpServerSchema>;
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type ConfigOverrides = Partial<Omit<Config, "context">> & { context?: Partial<Config["context"]> };
