@@ -1,4 +1,5 @@
 import type { PermissionMode } from "../config/config.js";
+import { clampMode } from "../team/policy.js";
 import type { ProposedChange, Tool } from "./types.js";
 
 export type PermissionDecision = "allow" | "deny";
@@ -21,8 +22,29 @@ export type PermissionPrompter = (req: PermissionRequest) => Promise<PermissionA
  */
 export class PermissionGate {
   private alwaysAllowed = new Set<string>();
+  private current: PermissionMode;
+  private max: PermissionMode | undefined;
 
-  constructor(public mode: PermissionMode, private readonly prompter?: PermissionPrompter) {}
+  constructor(mode: PermissionMode, private readonly prompter?: PermissionPrompter) {
+    this.current = mode;
+  }
+
+  /** The active mode. Setting it is clamped to `maxMode` when an org policy sets one. */
+  get mode(): PermissionMode {
+    return this.current;
+  }
+  set mode(m: PermissionMode) {
+    this.current = this.max ? clampMode(m, this.max) : m;
+  }
+
+  /** The most permissive mode allowed (from team policy). Lowers the current mode if needed. */
+  get maxMode(): PermissionMode | undefined {
+    return this.max;
+  }
+  set maxMode(m: PermissionMode | undefined) {
+    this.max = m;
+    if (m) this.current = clampMode(this.current, m);
+  }
 
   /** Pre-approve a tool for this session (same as answering "always"). */
   allowAlways(toolName: string): void {

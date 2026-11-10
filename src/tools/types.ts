@@ -1,6 +1,13 @@
 import type { z } from "zod";
 import type { Config } from "../config/config.js";
-import type { ContextIndex } from "../context/index.js";
+import type { ContextIndex, SearchHit } from "../context/index.js";
+
+/** Context served by a team server: shared, permission-filtered sources. */
+export interface RemoteContext {
+  label: string;
+  search(query: string, opts: { limit?: number; budgetTokens?: number }): Promise<SearchHit[]>;
+  doc(uri: string): Promise<{ title: string; url?: string; updatedAt?: string; sourceLabel: string; text: string } | null>;
+}
 
 /** `read` tools run freely; `write` and `exec` go through the permission gate. */
 export type ToolAccess = "read" | "write" | "exec";
@@ -10,6 +17,8 @@ export interface ToolContext {
   config: Config;
   index: ContextIndex;
   signal?: AbortSignal;
+  /** Team sources, when signed in to a team server. */
+  remote?: RemoteContext;
 }
 
 export interface ToolOutput {

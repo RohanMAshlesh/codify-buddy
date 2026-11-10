@@ -29,18 +29,31 @@ export const searchContextTool: Tool<{ query: string; scope?: "all" | "code" | "
   }),
   describe: (i) => `search "${i.query}"${i.scope && i.scope !== "all" ? ` in ${i.scope}` : ""}`,
   async run(input, ctx) {
+    const limit = input.limit ?? 8;
     const res = ctx.index.search(input.query, {
-      limit: input.limit ?? 8,
+      limit,
       scope: input.scope,
       pathFilter: input.path_filter,
       budgetTokens: ctx.config.context.budgetTokens,
     });
+    // Team sources: shared, permission-filtered documents from the team server.
+    let teamNote = "";
+    if (ctx.remote && input.scope !== "code") {
+      try {
+        let remote = await ctx.remote.search(input.query, { limit, budgetTokens: ctx.config.context.budgetTokens });
+        if (input.path_filter) remote = remote.filter((h) => h.path.includes(input.path_filter!));
+        const seen = new Set(res.hits.map((h) => h.citation));
+        res.hits = [...res.hits, ...remote.filter((h) => !seen.has(h.citation))].sort((a, b) => b.score - a.score).slice(0, limit);
+      } catch (err) {
+        teamNote = `\n\n(Team sources at ${ctx.remote.label} unavailable: ${(err as Error).message})`;
+      }
+    }
     if (res.hits.length === 0) {
       return { content: "No results. Try different terms, grep for exact strings, or find_files.", summary: `search "${input.query}" → 0 hits` };
     }
     const related = res.related.length ? `\n\nRelated files (imports/imported-by): ${res.related.join(", ")}` : "";
     return {
-      content: res.hits.map(formatHit).join("\n\n") + related,
+      content: res.hits.map(formatHit).join("\n\n") + related + teamNote,
       summary: `search "${input.query}" → ${res.hits.length} hits (${res.hits.slice(0, 3).map((h) => h.citation).join(", ")})`,
     };
   },

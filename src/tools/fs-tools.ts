@@ -21,8 +21,8 @@ function readText(abs: string, rel: string): string {
   return fs.readFileSync(abs, "utf8");
 }
 
-function readExternal(input: { path: string; start_line?: number; end_line?: number }, ctx: ToolContext): ToolOutput {
-  const doc = ctx.index.getExternalDoc(input.path);
+async function readExternal(input: { path: string; start_line?: number; end_line?: number }, ctx: ToolContext): Promise<ToolOutput> {
+  const doc = ctx.index.getExternalDoc(input.path) ?? (ctx.remote ? await ctx.remote.doc(input.path) : null);
   if (!doc) throw new ToolError(`No connected document at ${input.path}. Use search_context with scope "docs" to find documents.`);
   const lines = splitLines(doc.text);
   const start = Math.max(1, input.start_line ?? 1);
