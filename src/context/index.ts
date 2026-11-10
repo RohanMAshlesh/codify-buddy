@@ -108,6 +108,8 @@ export interface SearchOptions {
   budgetTokens?: number;
   /** Include snippet text (reads from disk). Default true. */
   withText?: boolean;
+  /** Only connector documents whose source passes this check (e.g. an ACL); project files are unaffected. */
+  sourceFilter?: (sourceId: string) => boolean;
 }
 
 export interface SearchHit {
@@ -458,6 +460,7 @@ export class ContextIndex {
         const ref = this.refs[idx]!;
         if (scope === "code" && ref.doc) return false;
         if (scope === "docs" && !ref.doc) return false;
+        if (ref.source && options.sourceFilter && !options.sourceFilter(ref.source)) return false;
         return !filter || ref.path.includes(filter);
       })
       .map(([idx, s]) => {
