@@ -26,6 +26,7 @@ import { printSearch } from "./commands/search.js";
 import { terminalPrompter } from "./prompt.js";
 import { runRepl } from "./repl.js";
 import { banner } from "./render.js";
+import { serveStdio } from "../rpc/server.js";
 
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return "";
@@ -194,6 +195,14 @@ function build(): Command {
       const file = o.global ? globalConfigFile() : projectConfigFile(findProjectRoot());
       setConfigValue(file, key, parseConfigValue(value));
       process.stdout.write(`${pc.green("✔")} ${key} = ${value}  ${pc.dim(file)}\n`);
+    });
+
+  program
+    .command("serve")
+    .description("run the engine as a JSON-RPC server on stdio (used by IDE extensions)")
+    .option("--stdio", "use stdin/stdout (default)")
+    .action(async () => {
+      await serveStdio();
     });
 
   return program;
