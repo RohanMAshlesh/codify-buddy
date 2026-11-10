@@ -1,0 +1,55 @@
+{
+  "name": "codify-buddy",
+  "version": "0.1.0",
+  "description": "AI coding copilot for your terminal that knows your code, docs and tools.",
+  "type": "module",
+  "license": "MIT",
+  "author": "RohanMAshlesh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RohanMAshlesh/codify-buddy.git"
+  },
+  "bin": {
+    "codify": "dist/cli.js",
+    "codify-buddy": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "binary": "bun build src/cli/index.ts --compile --outfile bin-out/codify",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "ai",
+    "copilot",
+    "cli",
+    "claude",
+    "coding-assistant",
+    "mcp",
+    "rag"
+  ],
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
+    "commander": "^15.1.0",
+    "ignore": "^7.0.14",
+    "picocolors": "^1.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
