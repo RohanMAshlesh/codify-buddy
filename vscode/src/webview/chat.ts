@@ -68,8 +68,9 @@ function setBusy(b: boolean) {
 function renderStatus(info?: EngineInfo) {
   if (!info) return;
   const sources = info.sources.length ? ` · ${info.sources.map((s) => `@${s.id} (${s.docs})`).join(" ")}` : "";
+  const team = info.team ? ` · team ${info.team.email}` : "";
   const mcp = info.mcp.filter((m) => m.ok).length ? ` · MCP ${info.mcp.filter((m) => m.ok).map((m) => m.name).join(", ")}` : "";
-  status.innerHTML = `<span>${escapeHtml(info.files.toString())} files${escapeHtml(sources)}${escapeHtml(mcp)}</span><span class="mode" title="Permission mode — click to change">${escapeHtml(info.mode)}</span>`;
+  status.innerHTML = `<span>${escapeHtml(info.files.toString())} files${escapeHtml(sources)}${escapeHtml(mcp)}${escapeHtml(team)}</span><span class="mode" title="Permission mode — click to change">${escapeHtml(info.mode)}</span>`;
   status.querySelector(".mode")!.addEventListener("click", () => post({ type: "command", command: "setMode" }));
 }
 

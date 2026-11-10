@@ -18,6 +18,8 @@ export interface EngineInfo {
   sessionId: string;
   sources: SourceInfo[];
   mcp: Array<{ name: string; ok: boolean; tools: string[]; error?: string }>;
+  /** Present when signed in to a team server. */
+  team?: { url: string; email: string; groups: string[]; maxMode: string } | null;
 }
 
 export type EngineStatus = "starting" | "ready" | "needsKey" | "noWorkspace" | "error";
