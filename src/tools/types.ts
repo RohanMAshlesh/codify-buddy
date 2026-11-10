@@ -27,6 +27,8 @@ export interface Tool<I = unknown> {
   description: string;
   access: ToolAccess;
   schema: z.ZodType<I>;
+  /** Raw JSON Schema sent to the model instead of one derived from `schema` (e.g. MCP tools). */
+  jsonSchema?: Record<string, unknown>;
   /** One-line description of a specific call, used in permission prompts. */
   describe(input: I): string;
   /** Optional preview (e.g. a diff) shown before asking permission. */

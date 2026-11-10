@@ -43,7 +43,9 @@ export class ToolRegistry {
    */
   definitions(): Anthropic.Beta.BetaTool[] {
     return this.list().map((t) => {
-      const schema = z.toJSONSchema(t.schema, { target: "draft-2020-12" }) as Record<string, unknown>;
+      const schema = t.jsonSchema
+        ? { type: "object", ...t.jsonSchema }
+        : (z.toJSONSchema(t.schema, { target: "draft-2020-12" }) as Record<string, unknown>);
       delete schema.$schema;
       return {
         name: t.name,
