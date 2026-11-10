@@ -130,6 +130,8 @@ async function main(promptParts: string[], opts: MainOptions): Promise<number> {
 
 function build(): Command {
   const program = new Command();
+  // Options after a subcommand belong to it (`codify doctor --json`), not to the root.
+  program.enablePositionalOptions();
   program
     .name("codify")
     .description("Codify Buddy — an AI coding copilot that knows your code, docs and tools.")
@@ -327,6 +329,14 @@ function build(): Command {
     });
 
   return program;
+}
+
+// Exit quietly when the reader goes away (`codify search … | head`).
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") process.exit(0);
+    throw err;
+  });
 }
 
 build()
