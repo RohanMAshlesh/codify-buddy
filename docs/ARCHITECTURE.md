@@ -32,7 +32,8 @@
         │ Agent        plan → act → verify loop over tools, streaming   │
         │ Tools        fs / search / shell / git  + permission gate     │
         │ Context      index → retrieve → rank → budget → cite          │
-        │ Connectors   GitHub, Confluence, Jira, MCP (P2)               │
+        │ Connectors   GitHub, Confluence, Jira, docs → sync + live tools│
+        │ MCP          client hub (external tools) + context server     │
         │ Model        Anthropic API (Bedrock/Vertex later), caching,   │
         │              refusal fallbacks, usage accounting              │
         └──────────────────────────────────────────────────────────────┘
@@ -50,6 +51,9 @@ src/
   tools/      tool registry, built-in tools, permission gate
   context/    walker, chunker, BM25 index, code graph, retriever, repo map
   config/     config + credential resolution
+  connectors/ GitHub, Confluence, Jira, docs-folder connectors + manager
+  mcp/        MCP client hub and read-only MCP context server
+  demo/       sample project + replay transport for `codify demo`
   rpc/        JSON-RPC stdio server for IDE clients
   util/       shared helpers
 ```
@@ -68,6 +72,40 @@ src/
 
 Embeddings and LLM reranking are optional plug-ins (P1.5): enabled when a
 provider is configured, never required.
+
+### Connector documents
+
+Connectors return plain-text documents (`ExternalDocInput`). The index
+chunks them by heading and stores them per source in
+`.codify/connectors/<id>.json`, separate from the code index, so a sync never
+rewrites the code index and the reverse. Each document gets a citation URI
+(`@<source>/<slug>`) and keeps its web URL. `search_context` covers both kinds
+(`scope: all | code | docs`), and `read_file` opens `@…` URIs. Docs folders
+inside the project are excluded from the code walk, so they're indexed once.
+
+## 4b. Connectors and MCP
+
+| Piece | Behaviour |
+|---|---|
+| `Connector` interface | `test()` · `sync()` → documents · `tools()` → live read-only tools |
+| GitHub | REST v3; issues + PRs with recent comments; live `get_issue` (+ PR diff) and `search` |
+| Confluence | Cloud REST v2 (cursor pagination, email + API token) or Data Center REST v1 (PAT); storage format → Markdown; live CQL search + page fetch |
+| Jira | Cloud v3 `search/jql` (token pagination, ADF → text) or DC v2; optional sync JQL; live JQL + issue fetch |
+| Docs folder | Markdown/text/HTML on disk; offline |
+| Secrets | env vars → `~/.codify/credentials.json` (0600, keyed `<type>:<host>`) → `gh auth token` |
+| Permission-awareness | Every call uses the user's own token, so the index holds only what that user can see. Team mode (P4) will store source ACLs and filter at query time. |
+| MCP client | stdio + streamable HTTP; tools exposed as `mcp__<server>__<tool>` with raw JSON schemas; `exec` access (asks) unless `readOnlyHint` or the server is `trusted`; connected in `Engine.open()` before the session so the tool list stays cache-stable |
+| MCP server | `codify mcp serve`: read-only `search_context`, `read_document`, `find_files`, `list_sources` |
+
+## 4c. Demo
+
+`codify demo` writes a dependency-free sample project (planted rounding bug,
+policy doc, issues, and a stale doc that contradicts the code), syncs it as
+two docs connectors and runs the scenario. With credentials it runs live,
+with the first prompt pre-filled. Without credentials, `ReplayTransport`
+plays the recorded model messages through the real engine, so search, reads,
+the edit (behind the permission prompt) and the test runs all execute for
+real. A test keeps the recording consistent with the project files.
 
 ## 5. Agent loop
 
@@ -106,7 +144,7 @@ Headless runs default to `read-only` unless a mode is passed explicitly.
 |---|---|
 | **P0** | CLI/REPL, engine, agent loop, tools, permissions, config, packaging, doctor |
 | **P1** | Context engine: index, retrieval, citations, repo map |
-| P2 | Connectors: GitHub, Confluence, Jira, MCP client + MCP server |
+| **P2** | Connectors: GitHub, Confluence, Jira, docs; MCP client + MCP server; `codify demo` |
 | P3 | VS Code extension over `codify serve` |
 | P4 | Team server: SSO, shared indexes, audit, policy, budgets |
 | P5 | Doc-drift detection, PR review action, ticket → PR |
