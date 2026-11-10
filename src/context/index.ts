@@ -162,6 +162,22 @@ function buildChunkTf(text: string, symbol: string | undefined, rel: string): Re
  * Local, dependency-free code index: symbol-aware chunks, BM25F-style
  * scoring, an import graph and incremental updates keyed on content hash.
  */
+/**
+ * Index options for a project: the context settings plus exclusions for
+ * docs-connector folders inside the project, so their files are indexed once
+ * (as connector documents) rather than twice.
+ */
+export function indexOptionsFor(root: string, config: { context: IndexOptions; connectors: Array<{ type: string; path?: string }> }): IndexOptions {
+  const extra = [...(config.context.extraIgnore ?? [])];
+  const absRoot = path.resolve(root);
+  for (const c of config.connectors) {
+    if (c.type !== "docs" || !c.path) continue;
+    const rel = path.relative(absRoot, path.resolve(absRoot, c.path)).split(path.sep).join("/");
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) extra.push(`/${rel}/`);
+  }
+  return { ...config.context, extraIgnore: extra };
+}
+
 export class ContextIndex {
   readonly root: string;
   private files: Record<string, FileEntry> = Object.create(null);
@@ -247,7 +263,7 @@ export class ContextIndex {
       for (let n = 2; usedUris.has(uri); n++) uri = `@${input.id}/${slugify(d.path ?? d.title)}-${n}`;
       usedUris.add(uri);
       const chunks = chunkFile(d.text, "markdown").map((c): StoredChunk => {
-        const symbol = c.symbol ? `${d.title} > ${c.symbol}` : d.title;
+        const symbol = !c.symbol ? d.title : c.symbol === d.title || c.symbol.startsWith(`${d.title} > `) ? c.symbol : `${d.title} > ${c.symbol}`;
         const tf = buildChunkTf(c.text, symbol, `${input.id}/${d.path ?? d.title}`);
         const len = Object.values(tf).reduce((a, b) => a + b, 0);
         return { startLine: c.startLine, endLine: c.endLine, kind: "section", symbol, tf, len, tokens: estimateTokens(c.text) };

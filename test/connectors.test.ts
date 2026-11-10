@@ -227,3 +227,15 @@ describe("ConnectorManager", () => {
     expect(() => ConnectorConfigSchema.parse({ id: "gh", type: "github", repo: "nope" })).toThrow();
   });
 });
+
+describe("indexOptionsFor", () => {
+  it("excludes in-project docs folders from the code walk", async () => {
+    const { indexOptionsFor } = await import("../src/context/index.js");
+    const root = makeTempDir({ "wiki/a.md": "# A\n\nalpha beta\n", "src/x.ts": "export const alpha = 1;\n" });
+    const opts = indexOptionsFor(root, { context: { maxFileBytes: 1_000_000 }, connectors: [{ type: "docs", path: "wiki" }, { type: "docs", path: "/elsewhere" }] });
+    expect(opts.extraIgnore).toEqual(["/wiki/"]);
+    const idx = new ContextIndex(root, opts);
+    idx.update();
+    expect(Object.keys(idx.fileEntries())).toEqual(["src/x.ts"]);
+  });
+});

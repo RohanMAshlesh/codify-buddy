@@ -1,7 +1,7 @@
 import { loadConfig, type Config, type ConfigOverrides } from "../config/config.js";
 import { resolveCredentials, type Credentials } from "../config/credentials.js";
 import { findProjectRoot } from "../config/paths.js";
-import { ContextIndex, type UpdateStats } from "../context/index.js";
+import { ContextIndex, indexOptionsFor, type UpdateStats } from "../context/index.js";
 import { buildRepoMap } from "../context/repomap.js";
 import type { FetchLike } from "../connectors/http.js";
 import { ConnectorManager } from "../connectors/manager.js";
@@ -49,7 +49,7 @@ export class Engine {
     this.root = findProjectRoot(opts.cwd);
     this.config = loadConfig(this.root, opts.overrides);
     this.persist = opts.persist ?? true;
-    this.index = new ContextIndex(this.root, this.config.context);
+    this.index = new ContextIndex(this.root, indexOptionsFor(this.root, this.config));
     this.index.load();
     this.lastIndexStats = this.index.update();
     this.tools = new ToolRegistry();
