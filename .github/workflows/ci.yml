@@ -66,3 +66,17 @@ jobs:
         with:
           name: codify-buddy-vsix
           path: vscode/codify-buddy.vsix
+
+  team-server-image:
+    name: team server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Docker image
+        run: docker build -t codify-team .
+      - name: Smoke test the container
+        run: |
+          mkdir -p team && echo '{"org":"CI","syncIntervalMinutes":0}' > team/team.json && sudo chown -R 1000:1000 team
+          docker run -d --name codify-team -p 8787:8787 -v "$PWD/team:/data" codify-team
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8787/healthz && exit 0; sleep 1; done
+          docker logs codify-team; exit 1
