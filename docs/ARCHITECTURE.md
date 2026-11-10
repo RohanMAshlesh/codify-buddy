@@ -107,6 +107,21 @@ plays the recorded model messages through the real engine, so search, reads,
 the edit (behind the permission prompt) and the test runs all execute for
 real. A test keeps the recording consistent with the project files.
 
+## 4d. VS Code extension (P3)
+
+The extension is a thin client. It runs the bundled engine
+(`vscode/dist/server/codify.mjs`, the CLI built with all its dependencies) as
+a child process with VS Code's own runtime, and talks to it over `codify
+serve`'s JSON-RPC.
+
+| Piece | Behaviour |
+|---|---|
+| `EngineClient` | Spawns the engine and handles request/response, engine → client requests (`permission/request`) and notifications (`chat/event`); restarts on demand |
+| `Controller` | Lifecycle (lazy start on first use), API key from SecretStorage passed as an env var, approvals, the native diff (`vscode.diff` on virtual before/after documents), citations, search, modes, sessions |
+| Chat webview | Streams Markdown (a safe subset; all HTML escaped), tool rows with failing-test highlights, approval cards; citations post back to the extension |
+| RPC additions | `chat/setMode \| setEffort \| setModel`, `context/read`, `sources/list`, `sessions/resume` (with transcript), error `-32001` when no API key; approval requests carry full before/after contents |
+| Tests | Engine client against the real bundled engine; controller end to end against a VS Code API mock, the real engine and a local Anthropic-protocol server; webview rendered in Chromium; CI runs the extension in real VS Code |
+
 ## 5. Agent loop
 
 * Manual streaming loop on the Messages API (`claude-opus-5-5`, adaptive
@@ -145,6 +160,6 @@ Headless runs default to `read-only` unless a mode is passed explicitly.
 | **P0** | CLI/REPL, engine, agent loop, tools, permissions, config, packaging, doctor |
 | **P1** | Context engine: index, retrieval, citations, repo map |
 | **P2** | Connectors: GitHub, Confluence, Jira, docs; MCP client + MCP server; `codify demo` |
-| P3 | VS Code extension over `codify serve` |
+| **P3** | VS Code extension over `codify serve` (shipped) |
 | P4 | Team server: SSO, shared indexes, audit, policy, budgets |
 | P5 | Doc-drift detection, PR review action, ticket → PR |

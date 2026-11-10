@@ -131,6 +131,28 @@ claude mcp add codify -- npx -y codify-buddy mcp serve
 `read_document`, `find_files` and `list_sources`. Claude Code, Cursor or any
 MCP client can then search your code and connected docs with citations.
 
+## VS Code
+
+The extension puts the same engine in a sidebar chat. Answers cite files and
+documents you can click to open at the cited line. Every edit opens in VS
+Code's own diff view with **Allow / Always allow / Deny**. You can also ask
+about or explain a selection (`Ctrl/Cmd+Alt+I`), search code and docs
+(`Ctrl/Cmd+Alt+K`), switch the permission mode from the status bar, and
+resume earlier sessions.
+
+The engine is bundled inside the extension, so you don't need Node.js or the
+CLI; your API key lives in VS Code's secret storage. Until it's on the
+Marketplace, install the `.vsix` from a
+[release](https://github.com/RohanMAshlesh/codify-buddy/releases) or from
+CI artifacts:
+
+```bash
+code --install-extension codify-buddy.vsix
+```
+
+To build it yourself, run `cd vscode && npm install && npm run build && npm
+run package`. More detail is in [vscode/README.md](vscode/README.md).
+
 ## Commands
 
 | Command | Description |
@@ -241,7 +263,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - [x] **P0** CLI, agent loop, tools, permissions, config, packaging, doctor
 - [x] **P1** Local context engine: index, retrieval, citations, repo map
 - [x] **P2** Connectors (GitHub, Confluence, Jira, docs folders), MCP client, MCP context server, `codify demo`
-- [ ] **P3** VS Code extension on `codify serve`
+- [x] **P3** VS Code extension: sidebar chat, native diff approvals, clickable citations, selection actions, bundled engine
 - [ ] **P4** Team mode: shared indexes, SSO, audit log, policies, budgets
 - [ ] **P5** Doc-drift detection, PR review action, ticket → PR
 
@@ -254,6 +276,10 @@ npm run typecheck
 npm run build       # dist/cli.js
 npm run binary      # standalone binary (requires Bun)
 node dist/cli.js    # run the local build
+
+cd vscode           # the VS Code extension
+npm install && npm run build && npm test
+npm run package     # codify-buddy.vsix
 ```
 
 ## License
