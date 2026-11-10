@@ -46,7 +46,8 @@ export function stem(w: string): string {
 }
 
 export function termFrequencies(tokens: string[]): Record<string, number> {
-  const tf: Record<string, number> = {};
+  // Null prototype: tokens like "constructor" must not hit Object.prototype.
+  const tf: Record<string, number> = Object.create(null);
   for (const t of tokens) tf[t] = (tf[t] ?? 0) + 1;
   return tf;
 }

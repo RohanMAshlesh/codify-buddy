@@ -164,6 +164,21 @@ describe("ContextIndex", () => {
     expect(idx.neighbours("src/services/user.ts")).toEqual(["src/models/user.ts", "src/services/db.ts"]);
   });
 
+  it("handles tokens that collide with Object.prototype keys", () => {
+    const root = makeTempDir({
+      "src/a.ts": "class A {\n  constructor() {\n    this.toString = () => 'hasOwnProperty';\n  }\n}\n",
+      "constructor": "plain file named constructor\n",
+    });
+    const idx = new ContextIndex(root, { maxFileBytes: 1_000_000 });
+    idx.update();
+    const res = idx.search("constructor toString hasOwnProperty");
+    expect(res.hits.length).toBeGreaterThan(0);
+    expect(res.hits.every((h) => Number.isFinite(h.score))).toBe(true);
+    const reloaded = new ContextIndex(root, { maxFileBytes: 1_000_000 });
+    reloaded.load();
+    expect(reloaded.search("constructor").hits.every((h) => Number.isFinite(h.score))).toBe(true);
+  });
+
   it("updates incrementally and persists", () => {
     const root = project();
     const idx = new ContextIndex(root, { maxFileBytes: 1_000_000 });

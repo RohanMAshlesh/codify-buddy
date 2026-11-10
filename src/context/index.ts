@@ -9,7 +9,7 @@ import { languageFor } from "./languages.js";
 import { splitIdentifier, stem, termFrequencies, tokenize } from "./tokenize.js";
 import { walkProject } from "./walker.js";
 
-export const INDEX_VERSION = 2;
+export const INDEX_VERSION = 3;
 
 const SYMBOL_WEIGHT = 4;
 const PATH_WEIGHT = 2;
@@ -109,7 +109,7 @@ function buildChunkTf(text: string, symbol: string | undefined, rel: string): Re
  */
 export class ContextIndex {
   readonly root: string;
-  private files: Record<string, FileEntry> = {};
+  private files: Record<string, FileEntry> = Object.create(null);
   private refs: ChunkRef[] = [];
   private postings = new Map<string, Array<[number, number]>>();
   private avgLen = 1;
@@ -141,7 +141,10 @@ export class ContextIndex {
     try {
       const data = JSON.parse(fs.readFileSync(this.indexFile, "utf8")) as Persisted;
       if (data.version !== INDEX_VERSION) return false;
-      this.files = data.files;
+      this.files = Object.assign(Object.create(null), data.files);
+      for (const entry of Object.values(this.files)) {
+        for (const c of entry.chunks) c.tf = Object.assign(Object.create(null), c.tf);
+      }
       this.builtAt = data.builtAt;
       this.rebuildDerived();
       return true;
@@ -223,6 +226,7 @@ export class ContextIndex {
         this.refs.push({ path: rel, chunk });
         total += chunk.len;
         for (const [term, tf] of Object.entries(chunk.tf)) {
+          if (typeof tf !== "number" || !Number.isFinite(tf)) continue;
           let list = this.postings.get(term);
           if (!list) this.postings.set(term, (list = []));
           list.push([idx, tf]);
