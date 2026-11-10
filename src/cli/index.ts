@@ -28,12 +28,37 @@ import { runRepl } from "./repl.js";
 import { banner } from "./render.js";
 import { serveStdio } from "../rpc/server.js";
 
-async function readStdin(): Promise<string> {
+/**
+ * Read piped stdin (`cat log | codify "explain"`). When a prompt was given on
+ * the command line, stdin is optional: if nothing arrives quickly we stop
+ * waiting, so an open-but-idle pipe (common in CI) never hangs the CLI.
+ */
+async function readStdin(hasPrompt: boolean, graceMs = 150): Promise<string> {
   if (process.stdin.isTTY) return "";
-  let data = "";
-  process.stdin.setEncoding("utf8");
-  for await (const chunk of process.stdin) data += chunk;
-  return data;
+  const stdin = process.stdin;
+  stdin.setEncoding("utf8");
+  return new Promise((resolve) => {
+    let data = "";
+    let timer: NodeJS.Timeout | undefined;
+    const done = () => {
+      if (timer) clearTimeout(timer);
+      stdin.off("data", onData);
+      stdin.off("end", done);
+      stdin.pause();
+      resolve(data);
+    };
+    const onData = (chunk: string) => {
+      data += chunk;
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    stdin.on("data", onData);
+    stdin.once("end", done);
+    stdin.once("error", done);
+    if (hasPrompt) timer = setTimeout(() => (data ? undefined : done()), graceMs);
+  });
 }
 
 interface MainOptions {
@@ -61,8 +86,8 @@ async function main(promptParts: string[], opts: MainOptions): Promise<number> {
   const resume = opts.continue ? listSessions(findProjectRoot())[0]?.id : opts.resume;
   if (opts.continue && !resume) process.stderr.write(pc.dim("No previous session to continue; starting fresh.\n"));
 
-  const piped = await readStdin();
   let prompt = promptParts.join(" ").trim();
+  const piped = await readStdin(prompt.length > 0);
   if (piped.trim()) prompt = prompt ? `${prompt}\n\n<stdin>\n${piped.trim()}\n</stdin>` : piped.trim();
 
   const interactive = !!process.stdin.isTTY && !!process.stdout.isTTY;
